@@ -1,0 +1,7 @@
+﻿{
+  "version": "2.0.0",
+  "runtime": "node-typescript",
+  "entrypoint": "AGENTS.md",
+  "control_plane": ".ai/node/ai-kit.ts",
+  "state": ".ai-work/state/workflow.json"
+}

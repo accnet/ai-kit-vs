@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "id": "claude-code",
+  "role": "executor",
+  "transport": "cli",
+  "command": ["claude", "-p", "{prompt}"],
+  "description": "Claude Code executor adapter."
+}

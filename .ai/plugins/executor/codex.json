@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "id": "codex",
+  "role": "executor",
+  "transport": "cli",
+  "command": ["codex", "exec", "--sandbox", "workspace-write", "{prompt}"],
+  "description": "Codex CLI executor adapter."
+}

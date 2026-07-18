@@ -1,0 +1,5 @@
+planner: codex
+executor: codex
+qa: local
+reviewer: claude
+fallback: any-capable-agent

@@ -1,0 +1,527 @@
+import { createHash } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  openSync,
+  closeSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { hostname } from "node:os";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+
+export const ROOT = resolve(import.meta.dirname, "..", "..");
+export const WORK = process.env.AIKIT_WORK ? resolve(process.env.AIKIT_WORK) : join(ROOT, ".ai-work");
+export const STATE = join(WORK, "state", "workflow.json");
+export const CURRENT = join(WORK, "state", "current.json");
+export const REGISTRY = join(WORK, "registry.json");
+export const WORKFLOWS = join(WORK, "workflows");
+const ROLE_DOMAINS: Record<string, string[]> = {
+  backend: ["backend", "database", "ai"],
+  frontend: ["frontend"],
+  database: ["database"],
+  devops: ["devops"],
+  release: ["devops"],
+  qa: ["testing"],
+};
+const CORE_BY_ROLE: Record<string, string[]> = {
+  planner: ["requirements-intake", "skill-router"],
+  researcher: ["requirements-intake", "skill-router"],
+  architect: ["refactoring", "api-contract"],
+  backend: ["api-contract", "observability"],
+  frontend: ["frontend-core", "test-and-validation"],
+  database: ["data-migration", "api-contract"],
+  devops: ["deployment-infra", "observability"],
+  qa: ["test-and-validation", "debugging"],
+  reviewer: ["code-review", "api-contract"],
+  security: ["security-review", "threat-modeling"],
+  integration: ["integration-contracts", "webhooks-and-retries"],
+  performance: ["performance-profiling", "observability"],
+  scheduler: ["workflow-orchestration"],
+  router: ["workflow-orchestration", "skill-router"],
+  document: ["documentation-maintenance", "architecture-decisions"],
+  release: ["release-management", "deployment-infra", "github-actions-ci"],
+};
+const LOCK_TTL_MS = Number(process.env.AIKIT_LOCK_TTL_SECONDS ?? "300") * 1000;
+const STATUSES = new Set([
+  "todo",
+  "in-progress",
+  "implementation-complete",
+  "qa-passed",
+  "review-approved",
+  "done",
+  "replaced",
+  "blocked",
+]);
+const TRANSITIONS: Record<string, [Set<string>, string]> = {
+  start: [new Set(["todo"]), "in-progress"],
+  complete: [new Set(["in-progress"]), "implementation-complete"],
+  "qa-pass": [new Set(["implementation-complete"]), "qa-passed"],
+  "review-approve": [new Set(["qa-passed"]), "review-approved"],
+  close: [new Set(["review-approved"]), "done"],
+  replace: [new Set(["qa-passed"]), "replaced"],
+  block: [new Set(["todo", "in-progress", "implementation-complete", "qa-passed", "review-approved"]), "blocked"],
+  unblock: [new Set(["blocked"]), "todo"],
+};
+
+export class EngineError extends Error {}
+export type Task = Record<string, any>;
+export type State = {
+  version: number;
+  revision: number;
+  title: string;
+  workflow: string;
+  created_at: string;
+  tasks: Task[];
+  phases: any[];
+  events: any[];
+};
+export const stamp = (date: Date) => date.toISOString().replace(/\.\d{3}Z$/, "Z");
+export const now = () => stamp(new Date());
+export const displayPath = (path: string) => {
+  const item = relative(ROOT, path);
+  return item && !item.startsWith("..") ? item.replaceAll("\\", "/") : path;
+};
+export const workspace = (path: string) =>
+  basename(dirname(path)) === "state" ? dirname(dirname(path)) : join(dirname(path), basename(path, ".json"));
+export const workflowStatePath = (id: string) => join(WORKFLOWS, workflowId(id), "state", "workflow.json");
+export function workflowId(id: string) {
+  if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(id))
+    throw new EngineError("workflow ID must use lowercase letters, numbers, and hyphens");
+  return id;
+}
+export const roleNames = () =>
+  new Set(
+    readdirSync(join(ROOT, ".ai", "agents"), { withFileTypes: true })
+      .filter((x) => x.isDirectory())
+      .map((x) => x.name),
+  );
+export const workflowNames = () =>
+  new Set(
+    readdirSync(join(ROOT, ".ai", "workflows"), { withFileTypes: true })
+      .filter((x) => x.isDirectory())
+      .map((x) => x.name),
+  );
+export const taskMap = (state: State) => new Map(state.tasks.map((task) => [task.id, task]));
+export const newState = (title: string, workflow: string): State => ({
+  version: 1,
+  revision: 0,
+  title,
+  workflow,
+  created_at: now(),
+  tasks: [],
+  phases: [],
+  events: [],
+});
+export function configuredStack() {
+  const manifest = readFileSync(join(ROOT, ".ai", "kit.yaml"), "utf8"),
+    match = manifest.match(/^\s*stack:\s*\[([^\]]*)\]/m);
+  return new Set(
+    match
+      ? match[1]
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean)
+      : [],
+  );
+}
+export function routeTask(task: Task, statePath: string) {
+  const stack = new Set([...configuredStack(), ...(task.tags ?? [])]),
+    skills: string[] = [],
+    skillRoot = join(ROOT, ".ai", "skills");
+  for (const domain of ROLE_DOMAINS[task.owner] ?? []) {
+    const directory = join(skillRoot, domain);
+    if (!existsSync(directory)) continue;
+    for (const entry of readdirSync(directory, { withFileTypes: true })
+      .filter((item) => item.isDirectory())
+      .sort((a, b) => a.name.localeCompare(b.name))) {
+      const overview = join(directory, entry.name, "overview.md");
+      if (existsSync(overview) && (stack.has(entry.name) || stack.has(domain))) skills.push(displayPath(overview));
+    }
+  }
+  for (const name of CORE_BY_ROLE[task.owner] ?? ["skill-router"]) {
+    const skill = join(skillRoot, "core", name, "SKILL.md");
+    if (existsSync(skill)) skills.push(displayPath(skill));
+  }
+  const root = workspace(statePath);
+  return {
+    task: task.id,
+    owner: task.owner,
+    tags: task.tags,
+    role_contract: `.ai/agents/${task.owner}`,
+    skills,
+    context: [
+      displayPath(join(root, "plan", "plan.md")),
+      displayPath(join(root, "tasks", "tasks.md")),
+      ".ai/engine/state-schema.md",
+      ...task.files,
+    ],
+  };
+}
+
+export function load<T = State>(path: string): T {
+  if (!existsSync(path)) throw new EngineError(`state not found: ${path}; run init first`);
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    throw new EngineError(`invalid JSON state: ${(error as Error).message}`);
+  }
+}
+function pidAlive(pid?: number) {
+  if (typeof pid !== "number") return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error: any) {
+    return error?.code === "EPERM";
+  }
+}
+function lockStale(path: string) {
+  try {
+    const meta = JSON.parse(readFileSync(path, "utf8"));
+    if (meta.host === hostname() && typeof meta.pid === "number" && !pidAlive(meta.pid)) return true;
+    return Date.now() - Date.parse(meta.created_at ?? "") > LOCK_TTL_MS;
+  } catch {
+    try {
+      return Date.now() - statSync(path).mtimeMs > LOCK_TTL_MS;
+    } catch {
+      return false;
+    }
+  }
+}
+function acquire(lock: string) {
+  mkdirSync(dirname(lock), { recursive: true });
+  const end = Date.now() + 5000;
+  for (;;) {
+    try {
+      const fd = openSync(lock, "wx");
+      writeFileSync(fd, JSON.stringify({ pid: process.pid, host: hostname(), created_at: now() }));
+      closeSync(fd);
+      return;
+    } catch {
+      if (existsSync(lock) && lockStale(lock)) {
+        try {
+          unlinkSync(lock);
+        } catch {}
+        continue;
+      }
+      if (Date.now() >= end) throw new EngineError(`state is locked: ${lock.replace(/\.lock$/, "")}`);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+    }
+  }
+}
+function release(lock: string) {
+  const end = Date.now() + 1000;
+  for (;;) {
+    try {
+      rmSync(lock, { force: true });
+      return;
+    } catch (error) {
+      if (Date.now() >= end) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+    }
+  }
+}
+function writeLocked(payload: any, path: string, expected?: number) {
+  const actual = existsSync(path) ? (load<any>(path).revision ?? 0) : 0;
+  if (expected !== undefined && actual !== expected)
+    throw new EngineError(`state changed concurrently (expected revision ${expected}, found ${actual})`);
+  payload.revision = actual + 1;
+  const temporary = `${path}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(payload, null, 2)}\n`);
+  renameSync(temporary, path);
+}
+export function saveJson(payload: any, path: string, expected?: number) {
+  const lock = `${path}.lock`;
+  acquire(lock);
+  try {
+    writeLocked(payload, path, expected);
+  } finally {
+    release(lock);
+  }
+}
+function managedState(path: string) {
+  const item = relative(WORK, resolve(path));
+  return item && !item.startsWith("..") && !isAbsolute(item);
+}
+function writeCurrent(state: State, path: string) {
+  if (!managedState(path)) return;
+  const lock = `${CURRENT}.lock`,
+    payload = {
+      version: 1,
+      workflow_state: displayPath(path),
+      title: state.title,
+      workflow: state.workflow,
+      active_tasks: state.tasks.filter((task) => task.status === "in-progress").map((task) => task.id),
+      updated_at: now(),
+    };
+  acquire(lock);
+  try {
+    mkdirSync(dirname(CURRENT), { recursive: true });
+    const temporary = `${CURRENT}.tmp`;
+    writeFileSync(temporary, `${JSON.stringify(payload, null, 2)}\n`);
+    renameSync(temporary, CURRENT);
+  } finally {
+    release(lock);
+  }
+}
+export function save(state: State, path: string, expected?: number) {
+  saveJson(state, path, expected);
+  writeCurrent(state, path);
+}
+export const loadRegistry = () =>
+  existsSync(REGISTRY) ? load<any>(REGISTRY) : { version: 1, revision: 0, workflows: [] };
+
+export function validate(state: State) {
+  for (const key of ["version", "revision", "title", "workflow", "tasks", "phases", "events"])
+    if (!(key in state)) throw new EngineError(`state missing keys: ${key}`);
+  if (!workflowNames().has(state.workflow)) throw new EngineError(`unknown workflow: ${state.workflow}`);
+  const tasks = taskMap(state);
+  if (tasks.size !== state.tasks.length) throw new EngineError("task IDs must be unique");
+  const roles = roleNames();
+  for (const task of state.tasks) {
+    for (const key of [
+      "id",
+      "title",
+      "owner",
+      "phase",
+      "needs",
+      "status",
+      "acceptance",
+      "files",
+      "attempts",
+      "evidence",
+      "tags",
+    ])
+      if (!(key in task)) throw new EngineError(`task ${task.id ?? "?"} missing ${key}`);
+    if (!STATUSES.has(task.status)) throw new EngineError(`task ${task.id} has invalid status`);
+    if (!roles.has(task.owner)) throw new EngineError(`task ${task.id} has unknown owner: ${task.owner}`);
+    if (!task.phase?.trim() || !task.acceptance?.length)
+      throw new EngineError(`task ${task.id} needs phase and acceptance criteria`);
+    for (const dependency of task.needs)
+      if (!tasks.has(dependency)) throw new EngineError(`task ${task.id} has unknown dependency: ${dependency}`);
+    if (task.needs.includes(task.id)) throw new EngineError(`task ${task.id} cannot depend on itself`);
+  }
+  const seen = new Set<string>(),
+    active = new Set<string>();
+  const visit = (id: string) => {
+    if (active.has(id)) throw new EngineError(`dependency cycle detected at ${id}`);
+    if (!seen.has(id)) {
+      active.add(id);
+      for (const dep of tasks.get(id)!.needs) visit(dep);
+      active.delete(id);
+      seen.add(id);
+    }
+  };
+  for (const id of tasks.keys()) visit(id);
+}
+const dependencyComplete = (task: Task) => ["done", "replaced"].includes(task.status);
+export const runnable = (task: Task, tasks: Map<string, Task>) =>
+  task.status === "todo" && task.needs.every((id: string) => dependencyComplete(tasks.get(id)!));
+export function syncPhases(state: State) {
+  const tasks = taskMap(state);
+  state.phases = [...new Set(state.tasks.map((task) => task.phase))].sort().map((id) => {
+    const phaseTasks = state.tasks.filter((task) => task.phase === id);
+    return {
+      id,
+      status: phaseTasks.every(dependencyComplete)
+        ? "complete"
+        : phaseTasks.some((task) => runnable(task, tasks))
+          ? "open"
+          : "planned",
+      tasks: phaseTasks.map((task) => task.id),
+    };
+  });
+}
+export function event(
+  state: State,
+  path: string,
+  action: string,
+  task: Task | null,
+  actor: string,
+  from: string | null,
+  to: string | null,
+  detail = "",
+) {
+  const seq = Math.max(0, ...state.events.map((item) => item.seq ?? 0)) + 1;
+  const item = { seq, ts: now(), action, task: task?.id ?? null, actor, from, to, detail };
+  state.events.push(item);
+  const log = join(workspace(path), "logs", "events.jsonl");
+  mkdirSync(dirname(log), { recursive: true });
+  writeFileSync(log, `${JSON.stringify(item)}\n`, { flag: "a" });
+  return item;
+}
+export function addTask(path: string, input: any) {
+  const state = load<State>(path);
+  const tasks = taskMap(state);
+  if (tasks.has(input.id)) throw new EngineError(`task already exists: ${input.id}`);
+  if (!input.acceptance?.length) throw new EngineError("add-task requires at least one --acceptance criterion");
+  const task: Task = {
+    id: input.id,
+    title: input.title,
+    owner: input.owner,
+    phase: input.phase,
+    needs: input.needs ?? [],
+    status: "todo",
+    acceptance: input.acceptance,
+    files: input.files ?? [],
+    tags: input.tags ?? [],
+    attempts: 0,
+    evidence: [],
+    blocked_reason: null,
+  };
+  state.tasks.push(task);
+  validate(state);
+  syncPhases(state);
+  event(state, path, "add-task", task, input.actor ?? "planner", null, "todo", "task added");
+  save(state, path, input.expectedRevision ?? state.revision);
+  return task;
+}
+function validateEvidence(task: Task, action: string, items: string[]) {
+  const expectedKind = action === "qa-pass" ? "qa" : "review";
+  for (const item of items) {
+    const path = isAbsolute(item) ? item : join(ROOT, item);
+    if (!existsSync(path) || !path.endsWith(".json"))
+      throw new EngineError(`${action} evidence must be an existing JSON file: ${item}`);
+    let payload: any;
+    try {
+      payload = JSON.parse(readFileSync(path, "utf8"));
+    } catch {
+      throw new EngineError(`invalid evidence JSON: ${item}`);
+    }
+    if (payload.kind !== expectedKind || payload.task !== task.id)
+      throw new EngineError(`evidence does not match ${expectedKind} task ${task.id}: ${item}`);
+    if (action === "qa-pass" && payload.status !== "pass") throw new EngineError(`QA evidence is not passing: ${item}`);
+    if (action === "review-approve" && payload.verdict !== "approve")
+      throw new EngineError(`review evidence is not approved: ${item}`);
+    if (action === "replace" && payload.verdict !== "changes-requested")
+      throw new EngineError(`replacement evidence must request changes: ${item}`);
+  }
+}
+export function transition(
+  path: string,
+  id: string,
+  action: string,
+  actor: string,
+  detail = "",
+  evidence: string[] = [],
+  expectedRevision?: number,
+  claim?: any,
+) {
+  const state = load<State>(path);
+  validate(state);
+  const task = taskMap(state).get(id);
+  if (!task) throw new EngineError(`unknown task: ${id}`);
+  const rule = TRANSITIONS[action];
+  if (!rule || !rule[0].has(task.status)) throw new EngineError(`cannot ${action} ${id} from ${task.status}`);
+  if (action === "start" && !runnable(task, taskMap(state)))
+    throw new EngineError(`task ${id} is blocked by unfinished dependencies`);
+  if (action === "block" && !detail) throw new EngineError("block requires --detail");
+  if (["qa-pass", "review-approve", "replace"].includes(action)) {
+    if (!evidence.length) throw new EngineError(`${action} requires at least one --evidence path`);
+    validateEvidence(task, action, evidence);
+  }
+  const previous = task.status;
+  task.status = rule[1];
+  task.blocked_reason = task.status === "blocked" ? detail : null;
+  if (evidence.length) task.evidence.push(...evidence);
+  if (action === "start") {
+    task.attempts++;
+    task.claim = claim ?? null;
+  }
+  if (["complete", "block"].includes(action)) {
+    if (task.claim) {
+      task.implementation_client = task.claim.client_id;
+      task.implementation_attempt = task.claim.attempt_id;
+    }
+    task.claim = null;
+  }
+  syncPhases(state);
+  event(state, path, action, task, actor, previous, task.status, detail);
+  save(state, path, expectedRevision ?? state.revision);
+  return task;
+}
+
+export function replaceWithRemediation(path: string, id: string, actor: string, detail: string, evidence: string[]) {
+  const state = load<State>(path);
+  validate(state);
+  const task = taskMap(state).get(id);
+  if (!task) throw new EngineError(`unknown task: ${id}`);
+  if (task.status !== "qa-passed") throw new EngineError(`cannot replace ${id} from ${task.status}`);
+  if (!detail) throw new EngineError("replacement requires review notes");
+  if (!evidence.length) throw new EngineError("replacement requires review evidence");
+  validateEvidence(task, "replace", evidence);
+
+  const prefix = `${id}-R`;
+  const revision = state.tasks.filter((item) => item.id.startsWith(prefix)).length + 1;
+  const remediationId = `${prefix}${revision}`;
+  const remediation: Task = {
+    id: remediationId,
+    title: `Address review for ${id}: ${task.title}`,
+    owner: task.owner,
+    phase: task.phase,
+    needs: [...task.needs],
+    status: "todo",
+    acceptance: [...task.acceptance, `Address review notes: ${detail}`],
+    files: [...task.files],
+    tags: [...task.tags, "remediation"],
+    attempts: 0,
+    evidence: [],
+    blocked_reason: null,
+    remediation_for: id,
+  };
+  const previous = task.status;
+  task.status = "replaced";
+  task.evidence.push(...evidence);
+  for (const dependent of state.tasks)
+    if (dependent.id !== id && dependent.needs.includes(id))
+      dependent.needs = dependent.needs.map((need: string) => (need === id ? remediationId : need));
+  state.tasks.push(remediation);
+  validate(state);
+  syncPhases(state);
+  event(state, path, "replace", task, actor, previous, "replaced", detail);
+  event(state, path, "add-task", remediation, "state-manager", null, "todo", `remediation for ${id}`);
+  save(state, path, state.revision);
+  return remediation;
+}
+export function createWorkflow(id: string, title: string, workflow: string, actor: string) {
+  workflowId(id);
+  if (!workflowNames().has(workflow)) throw new EngineError(`unknown workflow: ${workflow}`);
+  const lock = `${REGISTRY}.lock`;
+  acquire(lock);
+  try {
+    const registry = loadRegistry();
+    if (registry.workflows.some((item: any) => item.id === id)) throw new EngineError(`workflow already exists: ${id}`);
+    const path = workflowStatePath(id);
+    if (existsSync(path)) throw new EngineError(`workflow state already exists without registry entry: ${id}`);
+    const state = newState(title, workflow);
+    event(state, path, "init", null, actor, null, null, "workflow initialized");
+    save(state, path);
+    registry.workflows.push({ id, title, workflow, state: displayPath(path), created_at: state.created_at });
+    writeLocked(registry, REGISTRY, registry.revision);
+    return { id, title, workflow, state: displayPath(path) };
+  } finally {
+    release(lock);
+  }
+}
+export function makeClaim(clientId: string, task: Task, leaseSeconds = 300) {
+  if (!/^[A-Za-z0-9_.-]{1,80}$/.test(clientId)) throw new EngineError("client ID contains unsupported characters");
+  if (leaseSeconds < 15 || leaseSeconds > 3600) throw new EngineError("lease seconds must be between 15 and 3600");
+  const claimed = new Date(),
+    attempt = task.attempts + 1,
+    digest = createHash("sha256")
+      .update(`${clientId}:${task.id}:${attempt}:${claimed.toISOString()}`)
+      .digest("hex")
+      .slice(0, 12);
+  return {
+    client_id: clientId,
+    attempt_id: `${task.id}-${attempt}-${digest}`,
+    claimed_at: now(),
+    lease_expires_at: stamp(new Date(claimed.getTime() + leaseSeconds * 1000)),
+  };
+}

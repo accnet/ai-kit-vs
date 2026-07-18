@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "id": "gpt",
+  "role": "planner",
+  "transport": "cli",
+  "command": ["gpt", "{prompt}"],
+  "description": "Generic GPT-compatible CLI planner adapter."
+}

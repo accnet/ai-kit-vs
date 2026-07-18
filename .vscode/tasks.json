@@ -1,0 +1,81 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "AI-Kit: Validate workflow",
+      "type": "shell",
+      "command": "node",
+      "args": [".ai/node/node_modules/tsx/dist/cli.mjs", ".ai/node/ai-kit.ts", "validate"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "AI-Kit: Workflow status",
+      "type": "shell",
+      "command": "node",
+      "args": [".ai/node/node_modules/tsx/dist/cli.mjs", ".ai/node/ai-kit.ts", "status"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "AI-Kit: Ready tasks",
+      "type": "shell",
+      "command": "node",
+      "args": [".ai/node/node_modules/tsx/dist/cli.mjs", ".ai/node/ai-kit.ts", "ready"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "AI-Kit: Route task",
+      "type": "shell",
+      "command": "node",
+      "args": [".ai/node/node_modules/tsx/dist/cli.mjs", ".ai/node/ai-kit.ts", "route", "${input:taskId}"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "AI-Kit: Run configured planner",
+      "type": "shell",
+      "command": "node",
+      "args": [".ai/node/node_modules/tsx/dist/cli.mjs", ".ai/node/run-plugin.ts", "planner", "--workflow-id", "${input:workflowId}", "--once"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "AI-Kit: Run configured executor",
+      "type": "shell",
+      "command": "node",
+      "args": [".ai/node/node_modules/tsx/dist/cli.mjs", ".ai/node/run-plugin.ts", "executor", "--workflow-id", "${input:workflowId}", "--once"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "AI-Kit: Run configured QA",
+      "type": "shell",
+      "command": "node",
+      "args": [".ai/node/node_modules/tsx/dist/cli.mjs", ".ai/node/run-plugin.ts", "qa", "--workflow-id", "${input:workflowId}", "--once"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "AI-Kit: Run configured reviewer",
+      "type": "shell",
+      "command": "node",
+      "args": [".ai/node/node_modules/tsx/dist/cli.mjs", ".ai/node/run-plugin.ts", "reviewer", "--workflow-id", "${input:workflowId}", "--once"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "workflowId",
+      "type": "promptString",
+      "description": "AI-Kit workflow ID"
+    },
+    {
+      "id": "taskId",
+      "type": "promptString",
+      "description": "AI-Kit task ID"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "target": "ES2024",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noEmit": true,
+    "types": ["node"],
+    "typeRoots": [".ai/node/node_modules/@types"]
+  },
+  "include": [".ai/node/**/*.ts", "tests-node/**/*.ts"]
+}

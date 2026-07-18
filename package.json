@@ -1,0 +1,19 @@
+{
+  "name": "ai-kit-v2",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "check": "node .ai/node/node_modules/typescript/bin/tsc --noEmit",
+    "build": "npm run check",
+    "test:node": "node .ai/node/node_modules/tsx/dist/cli.mjs --test tests-node/**/*.test.ts",
+    "format": "node .ai/node/node_modules/prettier/bin/prettier.cjs --write .ai/node tests-node .ai/scripts/install-node-runtime.mjs package.json tsconfig.json",
+    "format:check": "node .ai/node/node_modules/prettier/bin/prettier.cjs --check .ai/node tests-node .ai/scripts/install-node-runtime.mjs package.json tsconfig.json",
+    "lint": "npm run format:check",
+    "test": "npm run check && npm run lint && npm run test:node",
+    "ai-kit": "node .ai/node/node_modules/tsx/dist/cli.mjs .ai/node/ai-kit.ts",
+    "ai-kit:gate": "node .ai/node/node_modules/tsx/dist/cli.mjs .ai/node/gate-runner.ts"
+  }
+}

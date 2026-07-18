@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "id": "claude",
+  "role": "reviewer",
+  "transport": "cli",
+  "command": ["claude", "-p", "{prompt}"],
+  "description": "Claude CLI reviewer adapter."
+}

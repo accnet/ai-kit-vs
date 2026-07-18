@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Generated build, coverage, and runtime files
+dist/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+*.log
+*.pid
+
+# Local environment and package-manager diagnostics
+.env
+.env.*
+!.env.example
+!.env.sample
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# AI-Kit disposable state, evidence, locks, and worker logs
+.ai-work/
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db

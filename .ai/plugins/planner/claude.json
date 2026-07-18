@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "id": "claude",
+  "role": "planner",
+  "transport": "cli",
+  "command": ["claude", "-p", "{prompt}"],
+  "description": "Claude CLI planner adapter."
+}
