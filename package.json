@@ -16,8 +16,6 @@
     "test": "npm run check && npm run lint && npm run test:node",
     "ai-kit": "node .ai/node/node_modules/tsx/dist/cli.mjs .ai/node/ai-kit.ts",
     "ai-kit:gate": "node .ai/node/node_modules/tsx/dist/cli.mjs .ai/node/gate-runner.ts",
-    "ai-kit:worker": "node .ai/node/node_modules/tsx/dist/cli.mjs .ai/node/worker-manager.ts",
-    "landing:dev": "node landing/server.mjs",
-    "landing:check": "node --check landing/app.js && node --check landing/server.mjs"
+    "ai-kit:worker": "node .ai/node/node_modules/tsx/dist/cli.mjs .ai/node/worker-manager.ts"
   }
 }

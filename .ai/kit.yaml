@@ -7,8 +7,8 @@
   registry: .ai/registry.yaml
 
 project:
-  stack: [node]
-  source_dirs: [landing]
+  stack: []
+  source_dirs: []
 
 verification:
   test_command: npm test

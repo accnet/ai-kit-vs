@@ -79,17 +79,4 @@ It does not create a root `node_modules`; it writes the runtime lockfile to `.ai
 
 The Node runtime is interpreted through `tsx`; `npm run build` is a no-emit TypeScript validation build.
 
-## Landing Page
-
-This checkout also includes the AI-Kit product landing page under `landing/`.
-The project config routes context gathering to that source directory, while the
-control plane remains under `.ai/`.
-
-```bash
-npm run landing:dev
-```
-
-Open `http://127.0.0.1:4173` to view it. The page is a dependency-free static
-surface with a local Node server, responsive navigation, and a copyable global
-install command.
 # ai-kit-vs
