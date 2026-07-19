@@ -29,7 +29,11 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --home) TARGET="$2"; shift 2 ;;
+    --home)
+      [[ $# -ge 2 ]] || { echo "--home requires a directory" >&2; exit 2; }
+      TARGET="$2"
+      shift 2
+      ;;
     --force) FORCE=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --no-deps) NO_DEPS=1; shift ;;
@@ -55,7 +59,7 @@ fi
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "[dry-run] would copy: ${PAYLOAD[*]}"
-  echo "[dry-run] would create home skeleton and bin/ai-kit launcher"
+  echo "[dry-run] would create home skeleton and CLI/worker/gate/plugin launchers"
   exit 0
 fi
 
@@ -106,6 +110,17 @@ if [[ "$NO_DEPS" -ne 1 ]]; then
   echo "Installing Node runtime dependencies..."
   ( cd "$TARGET/.ai/node" && npm install --no-audit --no-fund >/dev/null 2>&1 ) \
     || { echo "npm install failed in $TARGET/.ai/node — rerun with network access, or use --no-deps and install manually." >&2; exit 1; }
+fi
+
+for launcher in ai-kit ai-kit-worker ai-kit-gate ai-kit-plugin; do
+  [[ -x "$TARGET/bin/$launcher" ]] || { echo "installer verification failed: missing launcher $launcher" >&2; exit 1; }
+done
+if [[ -x "$TARGET/.ai/node/node_modules/tsx/dist/cli.mjs" ]]; then
+  NODE_BIN="node"; command -v node >/dev/null 2>&1 || NODE_BIN="node.exe"
+  "$NODE_BIN" "$TARGET/.ai/node/node_modules/tsx/dist/cli.mjs" "$TARGET/.ai/node/ai-kit.ts" version >/dev/null \
+    || { echo "installer verification failed: installed CLI did not respond" >&2; exit 1; }
+else
+  echo "Warning: dependencies were skipped; run npm --prefix \"$TARGET/.ai/node\" install before using the CLI." >&2
 fi
 
 echo "AI-Kit installed into $TARGET"

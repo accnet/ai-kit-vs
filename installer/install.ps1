@@ -34,7 +34,7 @@ if ((Test-Path (Join-Path $Target ".ai")) -and (-not $Force) -and (-not $DryRun)
 }
 if ($DryRun) {
   Write-Host "[dry-run] would copy: $($Payload -join ', ')"
-  Write-Host "[dry-run] would create home skeleton and bin\ai-kit.cmd launcher"
+  Write-Host "[dry-run] would create home skeleton and CLI/worker/gate/plugin launchers"
   exit 0
 }
 
@@ -82,6 +82,17 @@ if (-not $NoDeps) {
   try { & npm install --no-audit --no-fund | Out-Null }
   catch { Write-Error "npm install failed — rerun with network access, or use -NoDeps and install manually."; exit 1 }
   finally { Pop-Location }
+}
+
+foreach ($name in @("ai-kit", "ai-kit-worker", "ai-kit-gate", "ai-kit-plugin")) {
+  if (-not (Test-Path -LiteralPath (Join-Path $Target "bin\$name.cmd"))) { throw "installer verification failed: missing launcher $name" }
+}
+$tsx = Join-Path $Target ".ai\node\node_modules\tsx\dist\cli.mjs"
+if (Test-Path -LiteralPath $tsx) {
+  & node $tsx (Join-Path $Target ".ai\node\ai-kit.ts") version | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "installer verification failed: installed CLI did not respond" }
+} else {
+  Write-Warning "Dependencies were skipped; run npm --prefix `"$Target\.ai\node`" install before using the CLI."
 }
 
 Write-Host "AI-Kit installed into $Target"

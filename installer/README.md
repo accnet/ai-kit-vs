@@ -10,6 +10,13 @@ Installs AI-Kit **1.0.0** into a per-user home so one runtime backs every projec
 Override with `--home <dir>` (bash) / `-Home_ <dir>` (PowerShell) or the
 `AIKIT_HOME` environment variable.
 
+The repository-root `install.sh` and `install.ps1` are the canonical device
+entrypoints and forward to this installer. Project-local mode is explicit:
+`installer/install-project.sh` or `installer/install-project.ps1`.
+Run the device installer once per machine; it is not repeated for each
+project. Launchers always keep project state in the current project's
+`.ai-work/` directory.
+
 ## Install
 
 Linux / macOS:

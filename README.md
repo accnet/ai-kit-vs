@@ -49,24 +49,47 @@ reviewer: claude
 
 The configured role tasks are headless CLI runs. In an interactive Codex IDE conversation, use the route task to load context and ask Codex to write the assigned artifact; do not invoke a nested Codex worker from that same conversation.
 
-## Install Into A Project
+## Standard Device Install
 
-Place this directory at `<project-root>/ai-kit`. The standard installer targets the parent project directory automatically and installs the kit runtime without copying `.ai-work` session state:
+The canonical device installer puts one shared runtime in `~/ai-kit` and keeps
+each project's state in its own `.ai-work/` directory:
+
+Run this once per device. After that, add the launcher directory to `PATH` and
+run `ai-kit` from any project.
 
 ```bash
-bash ai-kit/install.sh --target <project-root> --dry-run
-bash ai-kit/install.sh --target <project-root>
+bash install.sh --dry-run
+bash install.sh
+export PATH="$HOME/ai-kit/bin:$PATH"
+ai-kit version
+```
+
+On Windows:
+
+```powershell
+.\install.ps1 -DryRun
+.\install.ps1
+```
+
+## Explicit Project-Local Install
+
+Use project-local mode only when the runtime must live inside a project:
+
+```bash
+bash installer/install-project.sh --target <project-root> --dry-run
+bash installer/install-project.sh --target <project-root>
 ```
 
 On Windows PowerShell:
 
 ```powershell
-.\ai-kit\install.ps1 -DryRun
-.\ai-kit\install.ps1
+.\installer\install-project.ps1 -DryRun
+.\installer\install-project.ps1
 ```
 
-The installer preserves the host `package.json` and installs the Node runtime only under `.ai/node/node_modules`. Node 22 or newer is required.
-It does not create a root `node_modules`; it writes the runtime lockfile to `.ai/node/package-lock.json`. If the runtime cache is intentionally removed later, run `npm --prefix .ai/node install` again.
+Both modes require Node 22 or newer. Project-local mode preserves the host
+`package.json` and installs the runtime only under `.ai/node/node_modules`; it
+does not create a root `node_modules`.
 
 ## Layout
 
