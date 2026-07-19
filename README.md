@@ -1,130 +1,211 @@
-# AI-Kit 1.0.0
+# AI-Kit MCP Installer
 
-AI-Kit is a repository-local, provider-neutral workflow engine for coding work. Its TypeScript control plane owns state, dependency scheduling, lifecycle gates, and audit history. AI tools participate through role-scoped plugins and JSON artifacts.
+`ai-kit-mcp` is the one-time device installer for AI-Kit. It installs one
+shared runtime into `~/ai-kit`; it is not copied into each project and it does
+not own project workflow state.
 
-## Quick Start
+After installation, new projects are initialized with the global command:
 
-1. Adapt `project` and `verification` in `.ai/kit.yaml` for the host project.
-2. Run `bash .ai/scripts/bootstrap.sh` and `bash .ai/scripts/doctor.sh`.
-3. Create a workflow and tasks with acceptance criteria.
-
-When working from a cleaned kit checkout, install the local runtime first:
-
-```bash
-npm --prefix .ai/node install
+```text
+ai-kit setup
 ```
 
-```bash
-bash .ai/scripts/ai-kit.sh init --title "My feature" --workflow feature --force
-bash .ai/scripts/ai-kit.sh add-task T1 --title "Build" --owner backend --phase build --acceptance "Focused tests pass"
-bash .ai/scripts/ai-kit.sh ready
-bash .ai/scripts/ai-kit.sh route T1
-```
+## Requirements
 
-The scheduler writes the default workflow state to `.ai-work/workflows/default/state/workflow.json`; each managed workflow gets its own state, artifacts, context, and audit log under `.ai-work/workflows/<workflow-id>/`.
+- Node.js 22 or newer
+- npm
+- Bash on Linux/macOS, or PowerShell on Windows
+- A writable user home directory
 
-## Role Plugins
-
-Plugins live under `.ai/plugins/<role>/<id>.json`, where role is `planner`, `executor`, `qa`, or `reviewer`. A manifest declares a local command and supports `{input}`, `{output}`, and `{prompt}` placeholders.
+Check Node before installing:
 
 ```bash
-node .ai/node/node_modules/tsx/dist/cli.mjs .ai/node/run-plugin.ts executor codex --workflow-id my-feature --once
-node .ai/node/node_modules/tsx/dist/cli.mjs .ai/node/run-plugin.ts qa local --workflow-id my-feature --once
+node --version
+npm --version
 ```
 
-The runner writes `assignment.json`, invokes the plugin, validates its output artifact, then asks the State Manager to apply the legal lifecycle change. Plugins never modify state directly or call one another. See `.ai/plugins/README.md` and `.ai/engine/artifact-schema.md`.
+## Install Once Per Device
 
-## VS Code
-
-Open the repository as a trusted VS Code workspace and install the recommended ChatGPT extension. Codex reads `AGENTS.md` for the repository contract. Run **Tasks: Run Task** from the Command Palette to validate a workflow, inspect ready work, route a task, or invoke the configured planner, executor, QA, or reviewer.
-
-Configure role adapters in `.ai/models.yaml`:
-
-```yaml
-planner: codex
-executor: codex
-qa: local
-reviewer: claude
-```
-
-The configured role tasks are headless CLI runs. In an interactive Codex IDE conversation, use the route task to load context and ask Codex to write the assigned artifact; do not invoke a nested Codex worker from that same conversation.
-
-## Standard Device Install
-
-The canonical device installer puts one shared runtime in `~/ai-kit` and keeps
-each project's state in its own `.ai-work/` directory:
-
-Run this once per device. After that, add the launcher directory to `PATH` and
-run `ai-kit` from any project.
+Linux or macOS:
 
 ```bash
+cd /path/to/ai-kit-mcp
 bash install.sh --dry-run
 bash install.sh
-# Install the device runtime and configure a workspace in one step:
-bash install.sh --workspace /path/to/workspace
 export PATH="$HOME/ai-kit/bin:$PATH"
 ai-kit version
 ```
 
-After the one-time device install, initialize any new project from its root:
+Add the `PATH` export to `~/.bashrc` or `~/.zshrc` for future shells.
+
+Windows PowerShell:
+
+```powershell
+Set-Location C:\path\to\ai-kit-mcp
+.\install.ps1 -DryRun
+.\install.ps1
+$env:Path = "$env:USERPROFILE\ai-kit\bin;" + $env:Path
+ai-kit version
+```
+
+The installer is idempotent only with explicit `--force` / `-Force` when an
+existing installation must be refreshed:
 
 ```bash
-cd /path/to/new-project
+bash install.sh --force
+```
+
+Use `--home <dir>` or `AIKIT_HOME` when testing an alternate device home.
+
+## Initialize A New Project
+
+Run the installed runtime from the new project's root:
+
+```bash
+cd /path/to/project
 ai-kit setup
+ai-kit validate
 ai-kit status
 ```
 
-`ai-kit setup` creates the project's `.ai-work/` state and compatibility
-bridges while keeping the runtime in `~/ai-kit`.
+`ai-kit setup` creates project-owned files and state:
 
-On Windows:
-
-```powershell
-.\install.ps1 -DryRun
-.\install.ps1
+```text
+project/
+├── .ai-work/
+│   ├── registry.json
+│   ├── state/current.json
+│   ├── run/workers/
+│   └── workflows/default/
+│       ├── artifacts/
+│       ├── context/
+│       ├── logs/
+│       ├── plan/plan.md
+│       ├── roadmap/roadmap.md
+│       ├── state/workflow.json
+│       └── tasks/tasks.md
+├── AGENTS.md
+├── CLAUDE.md
+├── GEMINI.md
+├── .claude/commands/
+├── .codex/config.toml
+├── .cursor/rules/ai-kit.mdc
+├── .github/copilot-instructions.md
+└── .vscode/
 ```
 
-## Explicit Project-Local Install
+The project gets no `.ai/node` runtime and no root `node_modules`. The runtime
+and templates remain in `~/ai-kit`. `ai-kit setup --force` refreshes managed
+bridge files without deleting the project's workflow state.
 
-Use project-local mode only when the runtime must live inside a project:
+## Natural-Language Setup
+
+After setup, the project `AGENTS.md` maps these requests to the same
+deterministic bootstrap flow:
+
+- `set up AI-Kit for this project`
+- `setup AI-Kit for this project`
+- `initialize this project with AI-Kit`
+
+An agent with terminal access should run `ai-kit setup`, `ai-kit validate`, and
+`ai-kit status`. Claude Code also has the `/setup-ai-kit` command. The trigger
+never resets `.ai-work` unless the user explicitly asks for that operation.
+
+The same project contract provides intent triggers for planning, implementation,
+QA, review, and status. Agents route these requests through `ai-kit route`,
+`ai-kit context`, `ai-kit status`, `ai-kit ready`, and `ai-kit timeline` as
+appropriate; users do not need to invoke a batch command.
+
+## Daily Workflow
+
+Create a task with an explicit owner, phase, and acceptance criterion:
 
 ```bash
-bash installer/install-project.sh --target <project-root> --dry-run
-bash installer/install-project.sh --target <project-root>
+ai-kit add-task T1 \
+  --title "Build the feature" \
+  --owner backend \
+  --phase build \
+  --acceptance "Focused tests pass"
 ```
 
-On Windows PowerShell:
-
-```powershell
-.\installer\install-project.ps1 -DryRun
-.\installer\install-project.ps1
-```
-
-Both modes require Node 22 or newer. Project-local mode preserves the host
-`package.json` and installs the runtime only under `.ai/node/node_modules`; it
-does not create a root `node_modules`.
-
-## Configure A Workspace
-
-When the device install already exists, configure a workspace without copying
-the runtime into it:
+Inspect and route work:
 
 ```bash
-bash installer/configure-workspace.sh --target /path/to/workspace
+ai-kit ready
+ai-kit status
+ai-kit route T1
+ai-kit context T1
+ai-kit show
+ai-kit timeline
 ```
 
-This writes the project agent bridge files and the complete `.ai-work/` tree;
-the runtime remains shared in `~/ai-kit`.
+Run workers and gates when provider plugins are configured:
 
-## Layout
+```bash
+ai-kit-worker list --workflow-id default
+ai-kit-worker start --workflow-id default --role executor
+ai-kit-gate default --once --verify
+```
 
-- `.ai/node/`: TypeScript control plane, local plugin runner, worker manager, and audit state.
-- `.ai/plugins/`: provider-specific role adapters with a shared artifact contract.
-- `.ai/agents/`: v2 role contracts, split into six concise documents.
-- `.ai/skills/`: technology reference material, grouped by domain.
-- `.ai/workflows/`: feature, bugfix, migration, release, and research paths.
-- `.ai-work/`: disposable plans, task state, artifacts, evidence, logs, and worker records.
+Use the state manager for lifecycle transitions. Do not hand-edit workflow
+JSON under `.ai-work/workflows/`.
 
-The Node runtime is interpreted through `tsx`; `npm run build` is a no-emit TypeScript validation build.
+## VS Code And Agent Bridges
 
-# ai-kit-vs
+The VS Code extension reads the global runtime when the project has no local
+runtime. `ai-kit setup` also creates:
+
+- `.vscode/settings.json` with `aiKit.home: ~/ai-kit`
+- `.vscode/tasks.json` for status, validation, routing, and gates
+- `.github/copilot-instructions.md` for GitHub Copilot
+- `CLAUDE.md` and `.claude/commands/` for Claude Code
+- `AGENTS.md` and `.codex/config.toml` for Codex-compatible workflows
+
+The launcher directory must be on `PATH` for VS Code shell tasks:
+
+```bash
+export PATH="$HOME/ai-kit/bin:$PATH"
+```
+
+## Device Layout
+
+The global home contains reusable runtime assets:
+
+```text
+~/ai-kit/
+├── .ai/                  # control plane, agents, skills, plugins, templates
+├── bin/                  # ai-kit, worker, gate, and plugin launchers
+├── plugins/ prompts/ workflows/ models/
+└── config/ cache/ logs/
+```
+
+Project state is always resolved from the current working directory:
+`<project>/.ai-work`. The global home must never contain project workflow
+state.
+
+## Verify And Repair
+
+```bash
+ai-kit home
+ai-kit version
+ai-kit verify-lock
+ai-kit setup --force
+```
+
+If a project has a bridge conflict, inspect the existing file and rerun with
+`--force` only when the AI-Kit version should replace it. Existing project
+state is preserved by setup.
+
+## Development Checks
+
+The installer source keeps its tests and source templates, but generated
+dependencies are intentionally not part of the installer payload. To run the
+source checks after a clean checkout:
+
+```bash
+node .ai/scripts/install-node-runtime.mjs --root .ai/node
+npm test
+```
+
+The release contract is described in `installer/manifest.json`. The canonical
+device entrypoints are `install.sh` and `install.ps1`.

@@ -11,31 +11,10 @@ Override with `--home <dir>` (bash) / `-Home_ <dir>` (PowerShell) or the
 `AIKIT_HOME` environment variable.
 
 The repository-root `install.sh` and `install.ps1` are the canonical device
-entrypoints and forward to this installer. Project-local mode is explicit:
-`installer/install-project.sh` or `installer/install-project.ps1`.
+entrypoints and forward to this installer.
 Run the device installer once per machine; it is not repeated for each
 project. Launchers always keep project state in the current project's
 `.ai-work/` directory.
-
-## Configure A Workspace
-
-After the device install, configure each workspace with the compatibility
-bridges. This creates the complete `.ai-work/` data tree, `AGENTS.md`, and
-entrypoints for Copilot, Claude, Codex, Cursor, Gemini, and VS Code without
-installing a second runtime into the workspace:
-
-```bash
-bash installer/configure-workspace.sh --target /path/to/workspace
-```
-
-On Windows:
-
-```powershell
-.\installer\configure-workspace.ps1 -Target C:\path\to\workspace
-```
-
-The project-local installer remains available only for projects that
-explicitly require a private runtime under `.ai/node`.
 
 ## Install
 
@@ -43,8 +22,6 @@ Linux / macOS:
 
 ```bash
 bash installer/install.sh
-# Install the device runtime and configure a workspace in one step:
-bash installer/install.sh --workspace /path/to/workspace
 export PATH="$HOME/ai-kit/bin:$PATH"   # add to ~/.bashrc or ~/.zshrc
 ai-kit version
 ```
@@ -98,7 +75,7 @@ its own workflow state and executes provider commands in its own directory:
 
 ```bash
 cd ~/projects/my-app
-ai-kit init --title "My app" --workflow feature   # writes ./.ai-work
+ai-kit setup                                              # creates ./.ai-work and agent bridges
 ai-kit status
 ai-kit-worker start --workflow-id default --role executor
 ai-kit-gate default --once --verify

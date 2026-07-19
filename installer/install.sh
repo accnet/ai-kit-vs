@@ -12,17 +12,15 @@ SOURCE="$(cd "$INSTALLER_DIR/.." && pwd)"
 source "$INSTALLER_DIR/lib.sh"
 
 TARGET="${AIKIT_HOME:-$HOME/ai-kit}"
-WORKSPACE=""
 FORCE=0
 DRY_RUN=0
 NO_DEPS=0
 
 usage() {
   cat >&2 <<EOF
-Usage: bash installer/install.sh [--home <dir>] [--workspace <dir>] [--force] [--dry-run] [--no-deps]
+Usage: bash installer/install.sh [--home <dir>] [--force] [--dry-run] [--no-deps]
 
 Installs AI-Kit into ~/ai-kit (override with --home or AIKIT_HOME).
-  --workspace <dir>  Configure a workspace to use this shared install.
   --force     Overwrite an existing install.
   --dry-run   Show what would happen without writing.
   --no-deps   Skip installing Node runtime dependencies.
@@ -34,11 +32,6 @@ while [[ $# -gt 0 ]]; do
     --home)
       [[ $# -ge 2 ]] || { echo "--home requires a directory" >&2; exit 2; }
       TARGET="$2"
-      shift 2
-      ;;
-    --workspace)
-      [[ $# -ge 2 ]] || { echo "--workspace requires a directory" >&2; exit 2; }
-      WORKSPACE="$2"
       shift 2
       ;;
     --force) FORCE=1; shift ;;
@@ -53,7 +46,7 @@ done
 NODE_BIN="$(aikit_require_node)" || exit 1
 
 # Shared runtime + knowledge + config that belong in the global home.
-PAYLOAD=(AGENTS.md CLAUDE.md GEMINI.md README.md package.json tsconfig.json .prettierrc.json .ai .claude .codex .cursor .github .githooks)
+PAYLOAD=(AGENTS.md CLAUDE.md GEMINI.md package.json tsconfig.json .prettierrc.json .ai .claude .codex .cursor .github .githooks)
 
 echo "AI-Kit installer"
 echo "  source: $SOURCE"
@@ -76,6 +69,7 @@ mkdir -p "$TARGET"
 tar -C "$SOURCE" \
   --exclude='node_modules' --exclude='.ai-work' --exclude='.git' \
   -cf - "${PAYLOAD[@]}" 2>/dev/null | tar -C "$TARGET" -xf -
+cp "$SOURCE/installer/README.global.md" "$TARGET/README.md"
 
 # Create the flat home skeleton for user extensions (empty is fine).
 for dir in plugins prompts workflows models templates config cache logs bin; do
@@ -134,11 +128,3 @@ echo "AI-Kit installed into $TARGET"
 echo "Add it to your PATH:"
 echo "  export PATH=\"$TARGET/bin:\$PATH\""
 echo "Then run:  ai-kit version"
-
-if [[ -n "$WORKSPACE" ]]; then
-  [[ "$NO_DEPS" -ne 1 ]] || {
-    echo "--workspace requires installed runtime dependencies; omit --no-deps." >&2
-    exit 2
-  }
-  bash "$INSTALLER_DIR/configure-workspace.sh" --target "$WORKSPACE" --home "$TARGET"
-fi

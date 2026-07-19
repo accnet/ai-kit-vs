@@ -86,6 +86,8 @@ const handlers: Record<string, () => unknown> = {
       ".claude/commands/plan.md",
       ".claude/commands/review.md",
       ".claude/commands/status.md",
+      ".claude/commands/setup-ai-kit.md",
+      ".claude/commands/qa.md",
       ".vscode/extensions.json",
       ".vscode/settings.json",
       ".vscode/tasks.json",

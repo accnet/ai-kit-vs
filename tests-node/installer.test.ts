@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { chmodSync, mkdirSync, readFileSync, existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { readFileSync, existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -36,8 +36,6 @@ test("installer manifest describes the canonical device entrypoints", () => {
   assert.equal(manifest.runtime.node, ">=22");
   for (const entrypoint of Object.values(manifest.entrypoints) as string[])
     assert.ok(existsSync(join(REPO, entrypoint)));
-  assert.equal(manifest.entrypoints.workspace_bash, "installer/configure-workspace.sh");
-  assert.equal(manifest.entrypoints.workspace_powershell, "installer/configure-workspace.ps1");
 });
 
 test("root installer is the global device entrypoint", () => {
@@ -46,7 +44,6 @@ test("root installer is the global device entrypoint", () => {
   const help = `${out.stdout}\n${out.stderr}`;
   assert.match(help, /installer\/install\.sh/);
   assert.match(help, /~\/ai-kit/);
-  assert.match(help, /--workspace/);
 });
 
 test("default device install separates kit home from project work state", () => {
@@ -65,29 +62,6 @@ test("default device install separates kit home from project work state", () => 
   assert.match(readFileSync(join(kit, "bin", "ai-kit"), "utf8"), /AIKIT_WORK=.*PWD\/\.ai-work/);
 });
 
-test("project-local installer is explicit and dry-run is non-mutating", () => {
-  const project = mkdtempSync(join(tmpdir(), "aikit-installer-project-"));
-  const out = run("bash", ["installer/install-project.sh", "--target", project, "--dry-run"]);
-  assert.equal(out.status, 0, out.stderr);
-  assert.match(out.stdout, /AGENTS\.md/);
-  assert.equal(existsSync(join(project, ".ai")), false);
-  assert.equal(existsSync(join(project, "AGENTS.md")), false);
-});
-
-test("workspace configurator dry-run is non-mutating", () => {
-  const project = mkdtempSync(join(tmpdir(), "aikit-workspace-project-"));
-  const home = mkdtempSync(join(tmpdir(), "aikit-workspace-home-"));
-  const launcher = join(home, "bin", "ai-kit");
-  mkdirSync(join(home, "bin"));
-  writeFileSync(launcher, "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
-  chmodSync(launcher, 0o755);
-  const out = run("bash", ["installer/configure-workspace.sh", "--target", project, "--home", home, "--dry-run"]);
-  assert.equal(out.status, 0, out.stderr);
-  assert.match(out.stdout, /\.ai-work/);
-  assert.equal(existsSync(join(project, ".ai-work")), false);
-  assert.equal(existsSync(join(project, "AGENTS.md")), false);
-});
-
 test("global ai-kit setup bootstraps a new project without a local runtime", () => {
   const project = mkdtempSync(join(tmpdir(), "aikit-setup-project-"));
   const out = runKitInProject(project, ["setup"]);
@@ -100,6 +74,7 @@ test("global ai-kit setup bootstraps a new project without a local runtime", () 
     ".cursor/rules/ai-kit.mdc",
     ".codex/config.toml",
     ".claude/commands/implement.md",
+    ".claude/commands/qa.md",
     ".vscode/settings.json",
     ".vscode/tasks.json",
     ".ai-work/workflows/default/state/workflow.json",

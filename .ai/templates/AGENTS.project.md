@@ -7,7 +7,7 @@ workflows or call another agent directly — everything goes through the AI-Kit 
 ## Where the data is (`.ai-work/`)
 
 Every workflow — including the default one — lives under `.ai-work/workflows/<id>/`
-(the quick `ai-kit init` flow uses the id `default`):
+(`ai-kit setup` creates the initial workflow with the id `default`):
 
 - `workflows/<id>/state/workflow.json` — that workflow's state (tasks, phases, events). **Source of truth.**
 - `workflows/<id>/plan/plan.md`, `roadmap/roadmap.md`, `tasks/tasks.md` — planning documents.
@@ -40,6 +40,37 @@ Run from the project root; state stays in `.ai-work/`:
 - `npm run ai-kit -- timeline` — event history.
 - `npm run ai-kit:worker -- start --workflow-id <id> --role executor` — run a provider worker.
 - `npm run ai-kit:gate -- <workflow-id> --once` — run QA and close tasks after reviewer approval.
+
+## Natural-Language Setup Trigger
+
+When the user says **"set up AI-Kit for this project"**, **"setup AI-Kit for
+this project"**, or **"initialize this project with AI-Kit"**, treat it as the
+workspace bootstrap request. From the project root, run:
+
+```bash
+ai-kit setup
+ai-kit validate
+ai-kit status
+```
+
+Do not use `--force` unless the user explicitly asks to refresh managed bridge
+files. Do not delete or reset existing `.ai-work` state as part of setup.
+
+## Natural-Language Workflow Triggers
+
+Use the following intent map instead of asking the user to run a batch command:
+
+| User intent | Agent action |
+| --- | --- |
+| "plan this feature", "break this into tasks" | Read the planner contract, inspect `ai-kit status`, and create a scoped plan with acceptance criteria before editing code. |
+| "implement T<n>", "build this task" | Run `ai-kit route <task-id>` and `ai-kit context <task-id>`, claim the task through the control plane, then implement and verify it. |
+| "test this", "verify the change", "run QA" | Read the QA contract, run the declared focused and full verification, and record evidence in the task workflow. |
+| "review this", "check the changes" | Read the reviewer contract, inspect the diff and evidence independently, and report findings without approving your own work. |
+| "show progress", "what is the status" | Run `ai-kit status`, `ai-kit ready`, and `ai-kit timeline`; do not start implementation. |
+
+For every trigger, load only the routed context, use the smallest applicable
+CLI command, and preserve existing `.ai-work` state. Never invoke an unscoped
+batch or bypass the State Manager with hand-edited lifecycle JSON.
 
 ## Rules
 
