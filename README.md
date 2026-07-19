@@ -1,6 +1,6 @@
-# AI-Kit v2
+# AI-Kit 1.0.0
 
-AI-Kit v2 is a repository-local, provider-neutral workflow engine for coding work. Its TypeScript control plane owns state, dependency scheduling, lifecycle gates, and audit history. AI tools participate through role-scoped plugins and JSON artifacts.
+AI-Kit is a repository-local, provider-neutral workflow engine for coding work. Its TypeScript control plane owns state, dependency scheduling, lifecycle gates, and audit history. AI tools participate through role-scoped plugins and JSON artifacts.
 
 ## Quick Start
 
@@ -21,7 +21,7 @@ bash .ai/scripts/ai-kit.sh ready
 bash .ai/scripts/ai-kit.sh route T1
 ```
 
-The scheduler writes workflow state to `.ai-work/state/workflow.json`; each managed workflow gets its own state, artifacts, context, and audit log under `.ai-work/workflows/<workflow-id>/`.
+The scheduler writes the default workflow state to `.ai-work/workflows/default/state/workflow.json`; each managed workflow gets its own state, artifacts, context, and audit log under `.ai-work/workflows/<workflow-id>/`.
 
 ## Role Plugins
 
@@ -79,4 +79,17 @@ It does not create a root `node_modules`; it writes the runtime lockfile to `.ai
 
 The Node runtime is interpreted through `tsx`; `npm run build` is a no-emit TypeScript validation build.
 
-# ai-kit-mcp
+## Landing Page
+
+This checkout also includes the AI-Kit product landing page under `landing/`.
+The project config routes context gathering to that source directory, while the
+control plane remains under `.ai/`.
+
+```bash
+npm run landing:dev
+```
+
+Open `http://127.0.0.1:4173` to view it. The page is a dependency-free static
+surface with a local Node server, responsive navigation, and a copyable global
+install command.
+# ai-kit-vs
