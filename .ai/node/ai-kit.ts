@@ -12,6 +12,8 @@ import {
   newState,
   now,
   PROJECT_ROOT,
+  ROOT,
+  WORK,
   routeTask,
   runnable,
   save,
@@ -69,6 +71,78 @@ const handlers: Record<string, () => unknown> = {
     event(state, statePath, "init", null, one("actor") ?? "planner", null, null, "workflow initialized");
     save(state, statePath);
     return state;
+  },
+  setup: () => {
+    if (PROJECT_ROOT === ROOT)
+      throw new EngineError("run 'ai-kit setup' from a project directory, not the AI-Kit home");
+    const workspaceFiles = [
+      "AGENTS.md",
+      "CLAUDE.md",
+      "GEMINI.md",
+      ".github/copilot-instructions.md",
+      ".cursor/rules/ai-kit.mdc",
+      ".codex/config.toml",
+      ".claude/commands/implement.md",
+      ".claude/commands/plan.md",
+      ".claude/commands/review.md",
+      ".claude/commands/status.md",
+      ".vscode/extensions.json",
+      ".vscode/settings.json",
+      ".vscode/tasks.json",
+    ];
+    const sourceFor = (relative: string) =>
+      relative === "AGENTS.md"
+        ? join(ROOT, ".ai", "templates", "AGENTS.project.md")
+        : relative.startsWith(".vscode/")
+          ? join(ROOT, ".ai", "templates", "workspace", relative.slice(".vscode/".length))
+          : join(ROOT, relative);
+    const copied: string[] = [];
+    for (const relative of workspaceFiles) {
+      const source = sourceFor(relative),
+        destination = join(PROJECT_ROOT, relative);
+      if (!existsSync(source)) throw new EngineError(`workspace template missing: ${relative}`);
+      const expected = readFileSync(source);
+      if (existsSync(destination) && !flag("force")) {
+        if (!readFileSync(destination).equals(expected)) throw new EngineError(`workspace file conflict: ${relative}`);
+        continue;
+      }
+      mkdirSync(join(destination, ".."), { recursive: true });
+      writeFileSync(destination, expected);
+      copied.push(relative);
+    }
+
+    for (const relative of [
+      "state",
+      "run/workers",
+      "workflows/default/state",
+      "workflows/default/plan",
+      "workflows/default/roadmap",
+      "workflows/default/tasks",
+      "workflows/default/context",
+      "workflows/default/artifacts",
+      "workflows/default/logs",
+    ])
+      mkdirSync(join(WORK, relative), { recursive: true });
+    const registry = join(WORK, "registry.json");
+    if (!existsSync(registry)) writeFileSync(registry, '{\n  "version": 1,\n  "revision": 0,\n  "workflows": []\n}\n');
+    if (!existsSync(statePath)) {
+      const state = newState("Untitled workspace workflow", "feature");
+      validate(state);
+      event(state, statePath, "init", null, "planner", null, null, "workspace initialized");
+      save(state, statePath);
+    }
+    for (const template of ["plan", "roadmap", "tasks"]) {
+      const destination = join(WORK, "workflows", "default", template, `${template}.md`);
+      if (!existsSync(destination))
+        writeFileSync(destination, readFileSync(join(ROOT, ".ai", "templates", `${template}.md`)));
+    }
+    const gitignore = join(PROJECT_ROOT, ".gitignore"),
+      marker = "# AI-Kit workspace state";
+    if (!existsSync(gitignore)) writeFileSync(gitignore, `${marker}\n.ai-work/\n`);
+    else if (!readFileSync(gitignore, "utf8").includes(marker))
+      writeFileSync(gitignore, `\n${marker}\n.ai-work/\n`, { flag: "a" });
+    validate(load<any>(statePath));
+    return { project: PROJECT_ROOT, home: ROOT, work: WORK, copied };
   },
   plan: () => {
     if (existsSync(statePath) && !flag("force"))

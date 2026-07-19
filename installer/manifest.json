@@ -12,7 +12,9 @@
     "bash": "install.sh",
     "powershell": "install.ps1",
     "project_bash": "installer/install-project.sh",
-    "project_powershell": "installer/install-project.ps1"
+    "project_powershell": "installer/install-project.ps1",
+    "workspace_bash": "installer/configure-workspace.sh",
+    "workspace_powershell": "installer/configure-workspace.ps1"
   },
   "launchers": ["ai-kit", "ai-kit-worker", "ai-kit-gate", "ai-kit-plugin"]
 }

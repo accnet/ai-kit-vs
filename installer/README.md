@@ -17,15 +17,50 @@ Run the device installer once per machine; it is not repeated for each
 project. Launchers always keep project state in the current project's
 `.ai-work/` directory.
 
+## Configure A Workspace
+
+After the device install, configure each workspace with the compatibility
+bridges. This creates the complete `.ai-work/` data tree, `AGENTS.md`, and
+entrypoints for Copilot, Claude, Codex, Cursor, Gemini, and VS Code without
+installing a second runtime into the workspace:
+
+```bash
+bash installer/configure-workspace.sh --target /path/to/workspace
+```
+
+On Windows:
+
+```powershell
+.\installer\configure-workspace.ps1 -Target C:\path\to\workspace
+```
+
+The project-local installer remains available only for projects that
+explicitly require a private runtime under `.ai/node`.
+
 ## Install
 
 Linux / macOS:
 
 ```bash
 bash installer/install.sh
+# Install the device runtime and configure a workspace in one step:
+bash installer/install.sh --workspace /path/to/workspace
 export PATH="$HOME/ai-kit/bin:$PATH"   # add to ~/.bashrc or ~/.zshrc
 ai-kit version
 ```
+
+After this one-time device install, a new project is initialized from its own
+root with the global runtime:
+
+```bash
+cd /path/to/new-project
+ai-kit setup
+ai-kit status
+```
+
+`ai-kit setup` creates `.ai-work/`, `AGENTS.md`, and the compatibility bridges
+for VS Code, Copilot, Claude, Codex, Cursor, and Gemini. The runtime remains
+in `~/ai-kit`.
 
 Windows (PowerShell):
 

@@ -7,6 +7,7 @@
 [CmdletBinding()]
 param(
   [string]$Home_ = $(if ($env:AIKIT_HOME) { $env:AIKIT_HOME } else { Join-Path $env:USERPROFILE "ai-kit" }),
+  [string]$Workspace = "",
   [switch]$Force,
   [switch]$DryRun,
   [switch]$NoDeps
@@ -22,7 +23,7 @@ $Target = $Home_
 Assert-AiKitNode
 
 # Shared runtime + knowledge + config that belong in the global home.
-$Payload = @("AGENTS.md", "CLAUDE.md", "GEMINI.md", "README.md", "package.json", "tsconfig.json", ".prettierrc.json", ".ai", ".githooks")
+$Payload = @("AGENTS.md", "CLAUDE.md", "GEMINI.md", "README.md", "package.json", "tsconfig.json", ".prettierrc.json", ".ai", ".claude", ".codex", ".cursor", ".github", ".githooks")
 $Exclude = @("node_modules", ".ai-work", ".git")
 
 Write-Host "AI-Kit installer"
@@ -99,3 +100,9 @@ Write-Host "AI-Kit installed into $Target"
 Write-Host "Add it to your PATH (PowerShell profile):"
 Write-Host "  `$env:Path = `"$Target\bin;`" + `$env:Path"
 Write-Host "Then run:  ai-kit version"
+
+if ($Workspace) {
+  if ($NoDeps) { throw '-Workspace requires installed runtime dependencies; omit -NoDeps.' }
+  & (Join-Path $InstallerDir 'configure-workspace.ps1') -Target $Workspace -Home_ $Target
+  if ($LASTEXITCODE -ne 0) { throw 'AI-Kit workspace configuration failed.' }
+}

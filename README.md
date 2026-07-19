@@ -60,9 +60,22 @@ run `ai-kit` from any project.
 ```bash
 bash install.sh --dry-run
 bash install.sh
+# Install the device runtime and configure a workspace in one step:
+bash install.sh --workspace /path/to/workspace
 export PATH="$HOME/ai-kit/bin:$PATH"
 ai-kit version
 ```
+
+After the one-time device install, initialize any new project from its root:
+
+```bash
+cd /path/to/new-project
+ai-kit setup
+ai-kit status
+```
+
+`ai-kit setup` creates the project's `.ai-work/` state and compatibility
+bridges while keeping the runtime in `~/ai-kit`.
 
 On Windows:
 
@@ -90,6 +103,18 @@ On Windows PowerShell:
 Both modes require Node 22 or newer. Project-local mode preserves the host
 `package.json` and installs the runtime only under `.ai/node/node_modules`; it
 does not create a root `node_modules`.
+
+## Configure A Workspace
+
+When the device install already exists, configure a workspace without copying
+the runtime into it:
+
+```bash
+bash installer/configure-workspace.sh --target /path/to/workspace
+```
+
+This writes the project agent bridge files and the complete `.ai-work/` tree;
+the runtime remains shared in `~/ai-kit`.
 
 ## Layout
 

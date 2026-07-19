@@ -9,7 +9,7 @@
     "typescript": "5.9.3"
   },
   "runtime_source": {
-    ".ai/node/ai-kit.ts": "f7ce9b90e9ce80f8e67799c46a810d06ccf70fc5e48254d624ca34c0d57b686f",
+    ".ai/node/ai-kit.ts": "610e5bed542cdf5039e4a806f0cf862f946995bcdef6b8e07c78fe2f15f33502",
     ".ai/node/artifacts.ts": "a79b3a39ed7adf5362d3e914b658c18544b259cfb761d0fb5c33506b005645f7",
     ".ai/node/board.ts": "c86186d54d4335d40edeedc030a150767ab39b386b468fa0c16ce4ebe96c8c5f",
     ".ai/node/capabilities.ts": "d33bc23b793152910d54abbe69783d4d3c7f00216f83e090488dbd56a444784c",
@@ -58,5 +58,5 @@
   "security": "8aa47a7ca80dcb2a68e8cfa3c77aab1e8f6bd6e8085fef5f5f90b3fa24f04cc1",
   "models": "97e7a7696543c1f80e4903aaa4da4cbad888539144ba6f3268f58565912fdf67",
   "kit": "f9eb74cee4c72e39bd22b3e8f0fdf3dbe1ff96c27be1577f296f4a07c38a12be",
-  "generated_at": "2026-07-19T04:14:23Z"
+  "generated_at": "2026-07-19T04:59:06Z"
 }
