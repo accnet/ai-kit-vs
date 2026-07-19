@@ -3,7 +3,7 @@
   "id": "codex",
   "role": "executor",
   "transport": "cli",
-  "command": ["codex", "exec", "--sandbox", "workspace-write", "{prompt}"],
+  "command": ["codex", "exec", "--skip-git-repo-check", "--sandbox", "workspace-write", "{prompt}"],
   "validate": ["codex", "--version"],
   "capabilities": { "roles": ["executor"], "features": ["code", "refactor", "test"], "auth": true },
   "description": "Codex CLI executor adapter."

@@ -45,6 +45,20 @@ test("resolvePluginPath prefers the project over the global home", () => {
   });
 });
 
+test("resolvePluginPath prefers .ai-work project plugins over legacy .ai plugins", () => {
+  withHome((home) => {
+    const project = mkdtempSync(join(tmpdir(), "proj-work-"));
+    mkdirSync(join(project, ".ai-work", "plugins", "reviewer"), { recursive: true });
+    mkdirSync(join(project, ".ai", "plugins", "reviewer"), { recursive: true });
+    writeFileSync(join(project, ".ai-work", "plugins", "reviewer", "shared.json"), "work");
+    writeFileSync(join(project, ".ai", "plugins", "reviewer", "shared.json"), "legacy");
+    assert.equal(
+      resolvePluginPath(project, "reviewer", "shared"),
+      join(project, ".ai-work", "plugins", "reviewer", "shared.json"),
+    );
+  });
+});
+
 test("loadPlugin falls back to a plugin that only exists in the global home", () => {
   withHome((home) => {
     const dir = join(home, "plugins", "planner");

@@ -1,12 +1,20 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { type PluginRole as Role } from "./artifacts.js";
-import { ROOT } from "./engine.js";
+import { PROJECT_ROOT, ROOT } from "./engine.js";
 import { loadPlugin } from "./plugins.js";
 
 export class ModelConfigError extends Error {}
 export type ModelConfig = Partial<Record<Role | "implementer" | "fallback", string>>;
-const CONFIG = join(ROOT, ".ai", "models.yaml");
+const GLOBAL_CONFIG = join(ROOT, ".ai", "models.yaml");
+const PROJECT_CONFIGS = [join(PROJECT_ROOT, ".ai-work", "models.yaml"), join(PROJECT_ROOT, ".ai", "models.yaml")];
+
+function readConfiguredModels(): ModelConfig {
+  const global = existsSync(GLOBAL_CONFIG) ? parseModelConfig(readFileSync(GLOBAL_CONFIG, "utf8")) : {};
+  const projectPath = PROJECT_CONFIGS.find((path) => existsSync(path));
+  const project = projectPath ? parseModelConfig(readFileSync(projectPath, "utf8")) : {};
+  return { ...global, ...project };
+}
 
 export function parseModelConfig(source: string): ModelConfig {
   const config: ModelConfig = {};
@@ -21,7 +29,7 @@ export function parseModelConfig(source: string): ModelConfig {
 }
 
 export function configuredPluginId(role: Role, source?: string) {
-  const config = parseModelConfig(source ?? (existsSync(CONFIG) ? readFileSync(CONFIG, "utf8") : ""));
+  const config = source === undefined ? readConfiguredModels() : parseModelConfig(source);
   const id = config[role] ?? (role === "executor" ? config.implementer : undefined);
   if (!id || id === "any-capable-agent") throw new ModelConfigError(`models.yaml must configure a plugin for ${role}`);
   loadPlugin(role, id);
@@ -33,7 +41,7 @@ export type ProviderInfo = { role: Role; plugin: string | null; provider: string
 // The configured role -> plugin -> provider-binary mapping, for the UI to show
 // which model backs each role. Unconfigured or invalid roles report nulls.
 export function listProviders(source?: string): ProviderInfo[] {
-  const config = parseModelConfig(source ?? (existsSync(CONFIG) ? readFileSync(CONFIG, "utf8") : ""));
+  const config = source === undefined ? readConfiguredModels() : parseModelConfig(source);
   const roles: Role[] = ["planner", "executor", "qa", "reviewer"];
   return roles.map((role) => {
     const id = config[role] ?? (role === "executor" ? config.implementer : undefined);

@@ -76,6 +76,8 @@ project/
 │   ├── registry.json
 │   ├── state/current.json
 │   ├── run/workers/
+│   ├── project.yaml
+│   ├── models.yaml
 │   └── workflows/default/
 │       ├── artifacts/
 │       ├── context/
@@ -97,6 +99,14 @@ project/
 The project gets no `.ai/node` runtime and no root `node_modules`. The runtime
 and templates remain in `~/ai-kit`. `ai-kit setup --force` refreshes managed
 bridge files without deleting the project's workflow state.
+
+Project configuration is kept in `.ai-work/` and can be committed separately
+from disposable workflow state. `project.yaml` declares stack, source
+directories, and verification commands. `models.yaml` overrides provider
+assignments for this project; omitted roles inherit the device defaults.
+Project plugins and security restrictions use `.ai-work/plugins/` and
+`.ai-work/security.yaml`. A project security file can restrict the global
+allowlist but cannot expand it.
 
 ## Natural-Language Setup
 
@@ -181,7 +191,9 @@ The global home contains reusable runtime assets:
 
 Project state is always resolved from the current working directory:
 `<project>/.ai-work`. The global home must never contain project workflow
-state.
+state. Project configuration under `.ai-work/` is the exception: it is intended
+to be versioned with the project while workflow state, artifacts, and logs stay
+ignored.
 
 ## Verify And Repair
 

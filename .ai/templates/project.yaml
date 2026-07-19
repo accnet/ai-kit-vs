@@ -1,0 +1,12 @@
+# Project-specific AI-Kit configuration.
+# Keep runtime, skills, and provider binaries in ~/ai-kit.
+project:
+  stack: []
+  source_dirs: []
+
+# Empty values mean that this project has not declared that check yet.
+verification:
+  test_command:
+  typecheck_command:
+  build_command:
+  lint_command:

@@ -8,8 +8,10 @@ import { join } from "node:path";
 import { PROJECT_ROOT, ROOT } from "./engine.js";
 
 export const kitPath = () => {
-  const project = join(PROJECT_ROOT, ".ai", "kit.yaml");
-  return existsSync(project) ? project : join(ROOT, ".ai", "kit.yaml");
+  const project = [join(PROJECT_ROOT, ".ai-work", "project.yaml"), join(PROJECT_ROOT, ".ai", "kit.yaml")].find((path) =>
+    existsSync(path),
+  );
+  return project ?? join(ROOT, ".ai", "kit.yaml");
 };
 
 export function readKit(): string {
@@ -37,4 +39,25 @@ export function kitArray(key: string, source = readKit()): Set<string> {
   );
 }
 
-export const testCommand = (source = readKit()): string | undefined => kitScalar("test_command", source);
+// A global kit config must not impose its test command on an unrelated
+// project. Projects opt in through their own `.ai/kit.yaml`, or through an
+// npm package that declares a test script.
+export const testCommand = (source?: string): string | undefined => {
+  if (source !== undefined) return kitScalar("test_command", source);
+
+  const projectKit = [join(PROJECT_ROOT, ".ai-work", "project.yaml"), join(PROJECT_ROOT, ".ai", "kit.yaml")].find(
+    (path) => existsSync(path),
+  );
+  if (projectKit) return kitScalar("test_command", readFileSync(projectKit, "utf8"));
+
+  const packageJson = join(PROJECT_ROOT, "package.json");
+  if (!existsSync(packageJson)) return undefined;
+  try {
+    const parsed = JSON.parse(readFileSync(packageJson, "utf8")) as { scripts?: Record<string, unknown> };
+    if (typeof parsed.scripts?.test !== "string" || !parsed.scripts.test.trim()) return undefined;
+  } catch {
+    return undefined;
+  }
+
+  return kitScalar("test_command") ?? "npm test";
+};

@@ -9,4 +9,8 @@ modify workflow state.
 
 The current runtime supports local CLI adapters. A future REST or WebSocket adapter must preserve these artifact schemas and state-manager boundary.
 
-`run-plugin.ts <role> --workflow-id <id> --once` resolves the plugin ID from `.ai/models.yaml`. Pass an explicit plugin ID after the role to override the configured adapter for one run.
+`run-plugin.ts <role> --workflow-id <id> --once` resolves the plugin ID from the
+project's `.ai-work/models.yaml`, falling back to the device `.ai/models.yaml`.
+Project plugin manifests under `.ai-work/plugins/<role>/` shadow the device
+plugin with the same role and ID. Pass an explicit plugin ID after the role to
+override the configured adapter for one run.

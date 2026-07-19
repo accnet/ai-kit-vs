@@ -76,5 +76,7 @@ batch or bypass the State Manager with hand-edited lifecycle JSON.
 
 - Use AI-Kit for everything; never bypass it.
 - Never hand-edit `.ai-work/workflows/` — change task state only through `ai-kit transition`.
-- Providers (Claude, Codex, GPT, Qwen, …) are configured in `.ai/models.yaml`; they are
-  interchangeable and must not be invoked directly.
+- Providers (Claude, Codex, GPT, Qwen, …) are configured per project in
+  `.ai-work/models.yaml`; omitted roles inherit the device defaults. Project
+  plugin overrides belong in `.ai-work/plugins/`. Providers are interchangeable
+  and must not be invoked directly.

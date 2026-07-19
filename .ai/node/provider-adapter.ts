@@ -112,7 +112,14 @@ function runProcess(
 ): Promise<RunResult> {
   return new Promise((resolve) => {
     const launch = launchSpec(command);
-    const child = spawn(launch.file, launch.args, { cwd, env, windowsHide: true });
+    // Providers receive their prompt as an argument. Close stdin immediately
+    // so CLIs that also probe stdin do not wait forever for a second prompt.
+    const child = spawn(launch.file, launch.args, {
+      cwd,
+      env,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let stdout = "";
     let stderr = "";
     let timedOut = false;

@@ -1,0 +1,4 @@
+# Project-specific provider overrides.
+# Omitted roles inherit ~/ai-kit/.ai/models.yaml.
+# Example:
+# reviewer: codex

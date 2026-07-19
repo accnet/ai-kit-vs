@@ -47,6 +47,7 @@ export function initHome(): { home: string; created: string[] } {
 // exists so the caller can raise a not-found error.
 export function resolvePluginPath(projectRoot: string, role: string, id: string): string | null {
   const candidates = [
+    join(projectRoot, ".ai-work", "plugins", role, `${id}.json`),
     join(projectRoot, ".ai", "plugins", role, `${id}.json`),
     join(homeSubdir("plugins"), role, `${id}.json`),
   ];

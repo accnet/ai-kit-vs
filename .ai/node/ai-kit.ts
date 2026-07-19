@@ -125,6 +125,14 @@ const handlers: Record<string, () => unknown> = {
       "workflows/default/logs",
     ])
       mkdirSync(join(WORK, relative), { recursive: true });
+    const projectConfigTemplates = ["project.yaml", "models.yaml"];
+    const initializedProjectConfigs: string[] = [];
+    for (const name of projectConfigTemplates) {
+      const destination = join(WORK, name);
+      if (existsSync(destination)) continue;
+      writeFileSync(destination, readFileSync(join(ROOT, ".ai", "templates", name)));
+      initializedProjectConfigs.push(displayPath(destination));
+    }
     const registry = join(WORK, "registry.json");
     if (!existsSync(registry)) writeFileSync(registry, '{\n  "version": 1,\n  "revision": 0,\n  "workflows": []\n}\n');
     if (!existsSync(statePath)) {
@@ -139,12 +147,17 @@ const handlers: Record<string, () => unknown> = {
         writeFileSync(destination, readFileSync(join(ROOT, ".ai", "templates", `${template}.md`)));
     }
     const gitignore = join(PROJECT_ROOT, ".gitignore"),
-      marker = "# AI-Kit workspace state";
-    if (!existsSync(gitignore)) writeFileSync(gitignore, `${marker}\n.ai-work/\n`);
-    else if (!readFileSync(gitignore, "utf8").includes(marker))
-      writeFileSync(gitignore, `\n${marker}\n.ai-work/\n`, { flag: "a" });
+      marker = "# AI-Kit workspace state",
+      ignoreBlock = `${marker}\n.ai-work/*\n!.ai-work/\n!.ai-work/project.yaml\n!.ai-work/models.yaml\n!.ai-work/security.yaml\n!.ai-work/plugins/\n!.ai-work/plugins/**\n`;
+    if (!existsSync(gitignore)) writeFileSync(gitignore, ignoreBlock);
+    else {
+      const current = readFileSync(gitignore, "utf8");
+      if (current.includes(`${marker}\n.ai-work/\n`))
+        writeFileSync(gitignore, current.replace(`${marker}\n.ai-work/\n`, ignoreBlock));
+      else if (!current.includes(marker)) writeFileSync(gitignore, `\n${ignoreBlock}`, { flag: "a" });
+    }
     validate(load<any>(statePath));
-    return { project: PROJECT_ROOT, home: ROOT, work: WORK, copied };
+    return { project: PROJECT_ROOT, home: ROOT, work: WORK, copied, initializedProjectConfigs };
   },
   plan: () => {
     if (existsSync(statePath) && !flag("force"))

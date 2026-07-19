@@ -10,7 +10,8 @@ Implementation: `.ai/node/provider-adapter.ts`. Consumer: `.ai/node/run-plugin.t
 ## Transport
 
 A provider is an opaque **CLI process**. Its command comes from the plugin
-manifest (`.ai/plugins/<role>/<id>.json`) and is rendered with three placeholders:
+manifest (`.ai-work/plugins/<role>/<id>.json`, then the device
+`.ai/plugins/<role>/<id>.json`) and is rendered with three placeholders:
 
 | Placeholder | Meaning |
 |-------------|---------|
@@ -48,7 +49,8 @@ so adding Cursor, Gemini, Qwen, ... is a manifest only — the Runtime never cha
 | **capability** | `capabilities` (optional) | Declared `{ roles, features, auth }`. `runtime.providers.capability(role, id)`. |
 
 CLI: `ai-kit provider <capability|validate|init> <role> <id>`. Any command in
-`init`/`validate` is also subject to the `.ai/security.yaml` allowlist.
+`init`/`validate` is also subject to the device `.ai/security.yaml` allowlist
+and any narrower project `.ai-work/security.yaml` policy.
 
 Example manifest with the full interface:
 

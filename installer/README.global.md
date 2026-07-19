@@ -30,6 +30,28 @@ Setup creates the project integration files and the complete `.ai-work/`
 directory. It does not install `.ai/node`, `node_modules`, or another copy of
 the runtime into the project.
 
+Setup also creates two project configuration files:
+
+```text
+.ai-work/project.yaml   # stack, source directories, verification commands
+.ai-work/models.yaml    # optional provider overrides
+```
+
+Project settings take precedence over device defaults. For example, to use
+Codex for every AI role in one project:
+
+```yaml
+planner: codex
+executor: codex
+qa: local
+reviewer: codex
+```
+
+Project plugin overrides go under `.ai-work/plugins/`. A project security file
+at `.ai-work/security.yaml` may restrict the device allowlist, but cannot
+expand it. These configuration files are kept separate from disposable
+workflow state so they can be committed to the project.
+
 Use `--force` to refresh managed bridge files after updating the kit:
 
 ```bash
@@ -128,7 +150,7 @@ bash install.sh --force
 
 ```text
 ~/ai-kit/                  shared runtime, templates, plugins, launchers
-/path/to/project/.ai-work  project state, tasks, artifacts, logs, workers
+/path/to/project/.ai-work  project config, state, tasks, artifacts, logs, workers
 ```
 
 Never place project `.ai-work` data in `~/ai-kit`, and never copy the global

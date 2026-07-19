@@ -14,11 +14,12 @@ function fakeProvider(dir: string): string {
   writeFileSync(
     script,
     [
-      "import { writeFileSync } from 'node:fs';",
+      "import { readFileSync, writeFileSync } from 'node:fs';",
       "const output = process.argv[3];",
       "const mode = process.env.FAKE_MODE ?? 'ok';",
       "if (mode === 'fail') { console.error('boom'); process.exit(3); }",
-      "if (mode === 'hang') { setInterval(() => {}, 1000); }",
+      "if (mode === 'stdin-close') { readFileSync(0); writeFileSync(output, '{}\\n'); }",
+      "else if (mode === 'hang') { setInterval(() => {}, 1000); }",
       "else if (mode === 'no-output') { process.exit(0); }",
       "else if (mode === 'sleep') { setTimeout(() => writeFileSync(output, '{}\\n'), 300); }",
       "else { writeFileSync(output, JSON.stringify({ ok: true }) + '\\n'); }",
@@ -59,6 +60,16 @@ test("adapter returns ok when the provider writes the artifact and exits 0", asy
   assert.equal(r.ok, true);
   assert.equal(r.exit_code, 0);
   assert.equal(r.attempts, 1);
+});
+
+test("adapter closes stdin when the provider prompt is passed as an argument", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pa-stdin-"));
+  const r = await invokeProvider(plugin(fakeProvider(dir)), {
+    ...opts(dir),
+    timeoutMs: 1000,
+    env: { ...process.env, FAKE_MODE: "stdin-close" },
+  });
+  assert.equal(r.outcome, "ok");
 });
 
 test("adapter reports nonzero-exit and does not retry by default", async () => {

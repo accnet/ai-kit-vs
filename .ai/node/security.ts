@@ -6,13 +6,14 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ROOT } from "./engine.js";
+import { PROJECT_ROOT, ROOT } from "./engine.js";
 
 export class SecurityError extends Error {}
 
 export type SecurityPolicy = { allowedCommands: Set<string>; allowAny: boolean };
 
-const CONFIG = join(ROOT, ".ai", "security.yaml");
+const GLOBAL_CONFIG = join(ROOT, ".ai", "security.yaml");
+const PROJECT_CONFIGS = [join(PROJECT_ROOT, ".ai-work", "security.yaml"), join(PROJECT_ROOT, ".ai", "security.yaml")];
 export const DEFAULT_ALLOWED = [
   "node",
   "npx",
@@ -69,11 +70,25 @@ export function parseSecurityPolicy(source: string): SecurityPolicy {
 }
 
 export function loadSecurityPolicy(): SecurityPolicy {
-  if (!existsSync(CONFIG)) return { allowedCommands: new Set(DEFAULT_ALLOWED), allowAny: false };
-  const policy = parseSecurityPolicy(readFileSync(CONFIG, "utf8"));
+  const global = existsSync(GLOBAL_CONFIG)
+    ? parseSecurityPolicy(readFileSync(GLOBAL_CONFIG, "utf8"))
+    : { allowedCommands: new Set(DEFAULT_ALLOWED), allowAny: false };
+  const base =
+    !global.allowedCommands.size && !global.allowAny
+      ? { allowedCommands: new Set(DEFAULT_ALLOWED), allowAny: false }
+      : global;
+  const projectPath = PROJECT_CONFIGS.find((path) => existsSync(path));
+  if (!projectPath) return base;
+
+  const project = parseSecurityPolicy(readFileSync(projectPath, "utf8"));
+  const allowedCommands = project.allowedCommands.size
+    ? new Set([...base.allowedCommands].filter((command) => project.allowedCommands.has(command)))
+    : new Set(base.allowedCommands);
+  // A project can restrict the device policy, but it cannot use a project file
+  // to expand the global allowlist or disable its enforcement.
+  const policy = { allowedCommands, allowAny: base.allowAny && project.allowAny };
   // An empty, enforcing policy would block everything; fall back to defaults.
-  if (!policy.allowedCommands.size && !policy.allowAny)
-    return { allowedCommands: new Set(DEFAULT_ALLOWED), allowAny: false };
+  if (!policy.allowedCommands.size && !policy.allowAny) return { allowedCommands: new Set(), allowAny: false };
   return policy;
 }
 
@@ -89,6 +104,6 @@ export function assertCommandAllowed(command: string[], policy: SecurityPolicy =
   const name = commandName(bin);
   if (policy.allowedCommands.has(name) || policy.allowedCommands.has(bin)) return;
   throw new SecurityError(
-    `command not permitted by .ai/security.yaml: ${bin} — add "${name}" to allowed_commands or set allow_any: true`,
+    `command not permitted by project/global security policy: ${bin} — add "${name}" to allowed_commands or set allow_any: true`,
   );
 }

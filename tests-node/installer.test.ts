@@ -80,13 +80,28 @@ test("global ai-kit setup bootstraps a new project without a local runtime", () 
     ".ai-work/workflows/default/state/workflow.json",
     ".ai-work/workflows/default/plan/plan.md",
     ".ai-work/workflows/default/tasks/tasks.md",
+    ".ai-work/project.yaml",
+    ".ai-work/models.yaml",
   ])
     assert.ok(existsSync(join(project, file)), `missing ${file}`);
   assert.equal(existsSync(join(project, ".ai")), false);
   assert.equal(existsSync(join(project, "node_modules")), false);
+  const gitignore = readFileSync(join(project, ".gitignore"), "utf8");
+  assert.match(gitignore, /\.ai-work\/\*/);
+  assert.match(gitignore, /!\.ai-work\/models\.yaml/);
   assert.deepEqual(JSON.parse(readFileSync(join(project, ".vscode/settings.json"), "utf8")), {
     "aiKit.home": "~/ai-kit",
   });
+});
+
+test("setup preserves project provider overrides on refresh", () => {
+  const project = mkdtempSync(join(tmpdir(), "aikit-setup-models-"));
+  let out = runKitInProject(project, ["setup"]);
+  assert.equal(out.status, 0, out.stderr);
+  writeFileSync(join(project, ".ai-work", "models.yaml"), "reviewer: codex\n");
+  out = runKitInProject(project, ["setup", "--force"]);
+  assert.equal(out.status, 0, out.stderr);
+  assert.equal(readFileSync(join(project, ".ai-work", "models.yaml"), "utf8"), "reviewer: codex\n");
 });
 
 test("global ai-kit setup refuses to overwrite a conflicting project bridge", () => {
