@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "id": "backend",
+  "kind": "knowledge",
+  "description": "Backend delivery capability: backend role plus NestJS and PostgreSQL knowledge.",
+  "agents": ["backend"],
+  "skills": ["backend/nestjs-core", "backend/nestjs-data-access", "database/postgresql", "core/api-contract"]
+}

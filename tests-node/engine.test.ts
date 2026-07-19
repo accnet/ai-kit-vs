@@ -45,10 +45,12 @@ test("Node engine persists and transitions an evidence-gated workflow", () => {
 test("Node plugin contract discovers role-scoped manifests", () => {
   assert.deepEqual(
     new Set(listPlugins("executor").map((plugin) => plugin.id)),
-    new Set(["claude", "claude-code", "codex"]),
+    new Set(["claude", "claude-code", "codex", "cursor", "gemini", "qwen"]),
   );
   const plugin = listPlugins("executor").find((item) => item.id === "codex")!;
   assert.ok(pluginCommand(plugin, "input.json", "output.json", "hello").includes("hello"));
+  const local = listPlugins("qa").find((item) => item.id === "local")!;
+  assert.ok(pluginCommand(local, "input.json", "output.json", "hello")[1].startsWith("/"));
 });
 
 test("Node engine rejects invalid dependency graphs", () => {

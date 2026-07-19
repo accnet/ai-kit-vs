@@ -27,3 +27,22 @@ export function configuredPluginId(role: Role, source?: string) {
   loadPlugin(role, id);
   return id;
 }
+
+export type ProviderInfo = { role: Role; plugin: string | null; provider: string | null; command: string[] };
+
+// The configured role -> plugin -> provider-binary mapping, for the UI to show
+// which model backs each role. Unconfigured or invalid roles report nulls.
+export function listProviders(source?: string): ProviderInfo[] {
+  const config = parseModelConfig(source ?? (existsSync(CONFIG) ? readFileSync(CONFIG, "utf8") : ""));
+  const roles: Role[] = ["planner", "executor", "qa", "reviewer"];
+  return roles.map((role) => {
+    const id = config[role] ?? (role === "executor" ? config.implementer : undefined);
+    if (!id || id === "any-capable-agent") return { role, plugin: null, provider: null, command: [] };
+    try {
+      const plugin = loadPlugin(role, id);
+      return { role, plugin: id, provider: plugin.command[0] ?? null, command: plugin.command };
+    } catch {
+      return { role, plugin: id, provider: null, command: [] };
+    }
+  });
+}

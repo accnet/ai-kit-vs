@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "id": "frontend",
+  "kind": "framework",
+  "description": "Frontend delivery capability: frontend role plus React and Vite knowledge.",
+  "agents": ["frontend"],
+  "skills": ["frontend/react", "frontend/react-vite", "core/frontend-core"]
+}

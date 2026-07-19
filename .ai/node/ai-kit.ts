@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   addTask,
   createWorkflow,
+  displayPath,
   EngineError,
   event,
   load,
   loadRegistry,
   newState,
   now,
+  PROJECT_ROOT,
   routeTask,
   runnable,
   save,
@@ -19,6 +22,11 @@ import {
   validate,
   workspace,
 } from "./engine.js";
+import { buildLock, LOCK_PATH, verifyLock } from "./lockfile.js";
+import { aiKitHome, initHome } from "./home.js";
+import { kitScalar } from "./config.js";
+import { type MemoryKind } from "./memory.js";
+import { runtime } from "./runtime.js";
 
 const argv = process.argv.slice(2);
 let statePath = STATE;
@@ -45,9 +53,9 @@ const one = (key: string, required = false) => {
 const many = (key: string) => values.get(key) ?? [];
 const flag = (key: string) => values.has(key);
 
-try {
-  let output: any;
-  if (command === "init") {
+// One handler per command. Order is preserved for the usage message.
+const handlers: Record<string, () => unknown> = {
+  init: () => {
     if (existsSync(statePath) && !flag("force"))
       throw new EngineError(`state already exists: ${statePath}; use --force to replace`);
     if (existsSync(statePath) && flag("force")) {
@@ -60,59 +68,19 @@ try {
     validate(state);
     event(state, statePath, "init", null, one("actor") ?? "planner", null, null, "workflow initialized");
     save(state, statePath);
-    output = state;
-  } else if (command === "workflow-create")
-    output = createWorkflow(argv[0], one("title", true)!, one("workflow") ?? "feature", one("actor") ?? "planner");
-  else if (command === "workflows") output = loadRegistry().workflows;
-  else if (command === "add-task")
-    output = addTask(statePath, {
-      id: argv[0],
-      title: one("title", true),
-      owner: one("owner", true),
-      phase: one("phase", true),
-      acceptance: many("acceptance"),
-      needs: many("needs"),
-      files: many("files"),
-      tags: many("tags"),
-      actor: one("actor") ?? "planner",
-    });
-  else if (command === "ready") {
-    const state = load<any>(statePath);
-    const tasks = taskMap(state);
-    output = state.tasks.filter((task: any) => runnable(task, tasks));
-  } else if (command === "status") {
-    const state = load<any>(statePath);
-    syncPhases(state);
-    const counts: Record<string, number> = {};
-    for (const task of state.tasks) counts[task.status] = (counts[task.status] ?? 0) + 1;
-    output = { title: state.title, revision: state.revision, counts, phases: state.phases };
-  } else if (command === "timeline") {
-    const state = load<any>(statePath);
-    validate(state);
-    output = state.events;
-  } else if (command === "blocked") {
-    const state = load<any>(statePath);
-    output = state.tasks
-      .filter((task: any) => task.status === "blocked")
-      .map((task: any) => ({ id: task.id, title: task.title, reason: task.blocked_reason }));
-  } else if (command === "graph") {
-    const state = load<any>(statePath);
-    const dot = (value: string) => String(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"');
-    output = `digraph workflow {\n${state.tasks.flatMap((task: any) => [`  "${dot(task.id)}" [label="${dot(`${task.id}: ${task.title}`)}"];`, ...task.needs.map((need: string) => `  "${dot(need)}" -> "${dot(task.id)}";`)]).join("\n")}\n}`;
-  } else if (command === "route") {
-    const state = load<any>(statePath),
-      task = taskMap(state).get(argv[0]);
-    if (!task) throw new EngineError(`unknown task: ${argv[0]}`);
-    output = routeTask(task, statePath);
-  } else if (command === "transition")
-    output = transition(statePath, argv[0], argv[1], one("actor", true)!, one("detail") ?? "", many("evidence"));
-  else if (command === "plan") {
+    return state;
+  },
+  plan: () => {
     if (existsSync(statePath) && !flag("force"))
       throw new EngineError(`state already exists: ${statePath}; use --force to replace`);
     const idea = one("idea", true)!,
       workflow = one("workflow") ?? "feature",
       acceptance = many("acceptance");
     if (!acceptance.length) throw new EngineError("--acceptance is required");
+    const root = workspace(statePath);
+    const planFiles = ["roadmap/roadmap.md", "plan/plan.md", "tasks/tasks.md"].map((name) =>
+      displayPath(join(root, name)),
+    );
     const state = newState(idea, workflow);
     state.tasks = [
       {
@@ -123,7 +91,7 @@ try {
         needs: [],
         status: "todo",
         acceptance: ["Scope, exclusions, risks, and acceptance criteria confirmed"],
-        files: [".ai-work/roadmap/roadmap.md", ".ai-work/plan/plan.md", ".ai-work/tasks/tasks.md"],
+        files: planFiles,
         tags: ["planning"],
         attempts: 0,
         evidence: [],
@@ -146,7 +114,6 @@ try {
     ];
     validate(state);
     syncPhases(state);
-    const root = workspace(statePath);
     mkdirSync(`${root}/roadmap`, { recursive: true });
     mkdirSync(`${root}/plan`, { recursive: true });
     mkdirSync(`${root}/tasks`, { recursive: true });
@@ -166,27 +133,104 @@ try {
     );
     event(state, statePath, "plan", null, one("actor") ?? "planner", null, null, "idea converted to draft plan");
     save(state, statePath);
-    output = {
+    return {
       state: statePath,
       workspace: root,
       tasks: ["T1", "T2"],
       assumptions: one("assumptions") ?? "none recorded",
     };
-  } else if (command === "onboard") {
+  },
+  "workflow-create": () =>
+    createWorkflow(argv[0], one("title", true)!, one("workflow") ?? "feature", one("actor") ?? "planner"),
+  workflows: () => loadRegistry().workflows,
+  "add-task": () =>
+    addTask(statePath, {
+      id: argv[0],
+      title: one("title", true),
+      owner: one("owner", true),
+      phase: one("phase", true),
+      acceptance: many("acceptance"),
+      needs: many("needs"),
+      files: many("files"),
+      tags: many("tags"),
+      actor: one("actor") ?? "planner",
+    }),
+  ready: () => {
+    const state = load<any>(statePath);
+    const tasks = taskMap(state);
+    return state.tasks.filter((task: any) => runnable(task, tasks));
+  },
+  transition: () => transition(statePath, argv[0], argv[1], one("actor", true)!, one("detail") ?? "", many("evidence")),
+  validate: () => {
+    validate(load<any>(statePath));
+    return { valid: true };
+  },
+  show: () => {
+    const state = load<any>(statePath);
+    syncPhases(state);
+    return state;
+  },
+  status: () => {
+    const state = load<any>(statePath);
+    syncPhases(state);
+    const counts: Record<string, number> = {};
+    for (const task of state.tasks) counts[task.status] = (counts[task.status] ?? 0) + 1;
+    return { title: state.title, revision: state.revision, counts, phases: state.phases };
+  },
+  timeline: () => {
+    const state = load<any>(statePath);
+    validate(state);
+    return state.events;
+  },
+  blocked: () => {
+    const state = load<any>(statePath);
+    return state.tasks
+      .filter((task: any) => task.status === "blocked")
+      .map((task: any) => ({ id: task.id, title: task.title, reason: task.blocked_reason }));
+  },
+  graph: () => {
+    const state = load<any>(statePath);
+    const dot = (value: string) => String(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+    return `digraph workflow {\n${state.tasks.flatMap((task: any) => [`  "${dot(task.id)}" [label="${dot(`${task.id}: ${task.title}`)}"];`, ...task.needs.map((need: string) => `  "${dot(need)}" -> "${dot(task.id)}";`)]).join("\n")}\n}`;
+  },
+  route: () => {
+    const state = load<any>(statePath),
+      task = taskMap(state).get(argv[0]);
+    if (!task) throw new EngineError(`unknown task: ${argv[0]}`);
+    return routeTask(task, statePath);
+  },
+  context: () => {
+    const state = load<any>(statePath),
+      task = taskMap(state).get(argv[0]);
+    if (!task) throw new EngineError(`unknown task: ${argv[0]}`);
+    const route = routeTask(task, statePath);
+    const budget = one("budget") ? Number(one("budget")) : undefined;
+    return {
+      task: task.id,
+      ...runtime.artifacts.assembleContext([route.role_contract, ...route.context, ...route.skills], budget),
+    };
+  },
+  bundle: () => {
+    const state = load<any>(statePath),
+      task = taskMap(state).get(argv[0]);
+    if (!task) throw new EngineError(`unknown task: ${argv[0]}`);
+    return runtime.context.build(task, statePath, one("budget") ? Number(one("budget")) : undefined);
+  },
+  onboard: () => {
     const stacks: string[] = [],
       sources: string[] = [];
     const verification: Record<string, string> = {};
-    if (existsSync("package.json")) {
+    if (existsSync(join(PROJECT_ROOT, "package.json"))) {
       stacks.push("node");
       sources.push("src");
       verification.test_command = "npm test";
     }
-    if (existsSync("composer.json")) {
+    if (existsSync(join(PROJECT_ROOT, "composer.json"))) {
       stacks.push("php", "laravel");
       sources.push("app");
       verification.test_command = "php artisan test";
     }
-    if (existsSync("pyproject.toml") || existsSync("requirements.txt")) {
+    if (existsSync(join(PROJECT_ROOT, "pyproject.toml")) || existsSync(join(PROJECT_ROOT, "requirements.txt"))) {
       stacks.push("python");
       sources.push("src");
       verification.test_command = "pytest -q";
@@ -201,7 +245,7 @@ try {
       verification,
     };
     if (flag("apply")) {
-      const manifest = ".ai/kit.yaml",
+      const manifest = join(PROJECT_ROOT, ".ai", "kit.yaml"),
         text = readFileSync(manifest, "utf8");
       writeFileSync(`${manifest}.bak`, text);
       let updated = text
@@ -212,19 +256,58 @@ try {
       writeFileSync(manifest, updated);
       proposal.applied = true;
     }
-    output = proposal;
-  } else if (command === "validate") {
-    validate(load<any>(statePath));
-    output = { valid: true };
-  } else if (command === "show") {
-    const state = load<any>(statePath);
-    syncPhases(state);
-    output = state;
-  } else
-    throw new EngineError(
-      "commands: init, plan, workflow-create, workflows, add-task, ready, transition, validate, show, status, timeline, blocked, graph, route, onboard",
-    );
-  console.log(JSON.stringify(output, null, 2));
+    return proposal;
+  },
+  capabilities: () =>
+    argv[0]
+      ? runtime.capabilities.resolveCapability(argv[0])
+      : runtime.capabilities.listCapabilities(one("kind") as any),
+  lock: () => {
+    const lock = buildLock();
+    writeFileSync(LOCK_PATH, `${JSON.stringify(lock, null, 2)}\n`);
+    return lock;
+  },
+  "verify-lock": () => {
+    const result = verifyLock();
+    if (!result.ok) process.exitCode = 1;
+    return result;
+  },
+  home: () => (flag("init") ? initHome() : { home: aiKitHome() }),
+  memory: () => {
+    const sub = argv[0];
+    if (sub === "add")
+      return runtime.memory.addMemory({
+        kind: one("kind", true) as MemoryKind,
+        title: one("title", true)!,
+        body: one("body"),
+      });
+    if (sub === "list") return runtime.memory.listMemory(one("kind") as MemoryKind | undefined);
+    if (sub === "search") return runtime.memory.searchMemory(one("query", true)!);
+    throw new EngineError("usage: memory <add|list|search> [--kind K] [--title T] [--body B] [--query Q]");
+  },
+  providers: () => runtime.providers.list(),
+  provider: () => {
+    const sub = argv[0],
+      role = argv[1] as any,
+      id = argv[2];
+    if (!role || !id) throw new EngineError("usage: provider <capability|validate|init> <role> <id>");
+    if (sub === "capability") return runtime.providers.capability(role, id);
+    if (sub === "validate") return runtime.providers.validate(role, id);
+    if (sub === "init") return runtime.providers.init(role, id);
+    throw new EngineError("usage: provider <capability|validate|init> <role> <id>");
+  },
+  version: () => ({
+    // Kit identity from .ai/kit.yaml, which is always installed (a consuming
+    // project may have no root package.json).
+    name: kitScalar("id") ?? "ai-kit",
+    version: kitScalar("version") ?? "0.0.0",
+  }),
+};
+
+try {
+  const handler = command ? handlers[command] : undefined;
+  if (!handler) throw new EngineError(`commands: ${Object.keys(handlers).join(", ")}`);
+  console.log(JSON.stringify(handler(), null, 2));
 } catch (error) {
   console.error(`ERROR: ${(error as Error).message}`);
   process.exitCode = 2;

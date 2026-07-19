@@ -1,12 +1,9 @@
-import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { delimiter, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as board from "./board.js";
 import { artifactPath, readArtifact, writeArtifact, type ArtifactKind, type PluginRole } from "./artifacts.js";
-import { ROOT } from "./engine.js";
 import { configuredPluginId } from "./models.js";
-import { loadPlugin, pluginCommand } from "./plugins.js";
+import { loadPlugin } from "./plugins.js";
+import { invokeProvider } from "./provider-adapter.js";
 import { markWorker, stopRequested } from "./worker-manager.js";
 
 const argv = process.argv.slice(2);
@@ -29,16 +26,15 @@ const artifactForRole: Record<PluginRole, ArtifactKind> = {
   qa: "qa",
   reviewer: "review",
 };
-const windowsScript = (command: string) => {
-  if (process.platform !== "win32") return false;
-  if ([".cmd", ".bat"].includes(extname(command).toLowerCase())) return true;
-  if (extname(command)) return false;
-  const paths = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
-  return paths.some((path) => [".cmd", ".bat"].some((extension) => existsSync(join(path, `${command}${extension}`))));
-};
 
 function taskFor(role: PluginRole, workflow: string, actor: string) {
-  if (role === "planner") return { claimed: "plan", title: "Create workflow plan", owner: "planner" };
+  if (role === "planner")
+    return {
+      claimed: "plan",
+      title: "Create workflow plan",
+      owner: "planner",
+      context_manifest: board.planContext(workflow, actor),
+    };
   if (role === "executor") return board.claimNext(actor, workflow, owner);
   const pending = board.pendingReview(workflow);
   const item = role === "qa" ? pending.awaiting_qa[0] : role === "reviewer" ? pending.awaiting_review[0] : undefined;
@@ -51,7 +47,7 @@ function prompt(role: PluginRole, input: string, output: string) {
   return [
     `You are the ${role} plugin for AI-Kit.`,
     `Read the JSON assignment at ${input}.`,
-    "When the assignment input has a context_manifest, read that JSON and every existing source it lists before working.",
+    "When the assignment input has a context_manifest, read that JSON and load only the sources listed under its `context.included` — a ranked, token-budgeted selection. You do not need the other sources.",
     `Perform only the assigned role work.`,
     "For QA or review, inspect the assignment acceptance criteria, changed files, and evidence paths before deciding.",
     `Write exactly one valid ${artifactForRole[role]} JSON artifact to ${output}.`,
@@ -59,7 +55,10 @@ function prompt(role: PluginRole, input: string, output: string) {
   ].join("\n");
 }
 
-export function runOnce(role: PluginRole, id: string, workflow: string, actor = `${role}:${id}`) {
+const LEASE_SECONDS = 300;
+const HEARTBEAT_MS = (LEASE_SECONDS * 1000) / 3; // renew well before the lease expires
+
+export async function runOnce(role: PluginRole, id: string, workflow: string, actor = `${role}:${id}`) {
   const plugin = loadPlugin(role, id);
   const claimed: any = taskFor(role, workflow, actor);
   if (!claimed.claimed) return claimed;
@@ -77,15 +76,26 @@ export function runOnce(role: PluginRole, id: string, workflow: string, actor = 
     attempt_id: attempt,
     input: claimed,
   });
-  const command = pluginCommand(plugin, input, output, prompt(role, input, output));
-  const run = spawnSync(command[0], command.slice(1), {
-    cwd: ROOT,
-    encoding: "utf8",
-    shell: windowsScript(command[0]),
+  // Renew the claim lease while a long executor run is in flight.
+  const onHeartbeat =
+    role === "executor" && attempt
+      ? () => {
+          try {
+            board.heartbeat(workflow, task, actor, attempt, LEASE_SECONDS);
+          } catch {
+            /* a failed heartbeat must not abort the provider run */
+          }
+        }
+      : undefined;
+  const run = await invokeProvider(plugin, {
+    input,
+    output,
+    prompt: prompt(role, input, output),
+    onHeartbeat,
+    heartbeatMs: onHeartbeat ? HEARTBEAT_MS : undefined,
   });
-  if (run.error || run.status !== 0) {
-    const detail =
-      run.error?.message ?? (run.stderr.trim() || run.stdout.trim() || `exit status ${run.status ?? "unknown"}`);
+  if (!run.ok) {
+    const detail = `${run.outcome} after ${run.attempts} attempt(s): ${run.error ?? "unknown"}`;
     if (role === "executor" && attempt)
       board.reportBlocked(workflow, task, actor, attempt, `${id} plugin failed: ${detail}`);
     throw new Error(`${id} plugin failed: ${detail}`);
@@ -118,7 +128,7 @@ if (isMain) {
   const selectedPlugin = pluginId ?? configuredPluginId(role);
   for (;;) {
     if (workerId && stopRequested(workerId)) break;
-    const result = runOnce(role, selectedPlugin, workflowId, clientId ?? `${role}:${selectedPlugin}`);
+    const result = await runOnce(role, selectedPlugin, workflowId, clientId ?? `${role}:${selectedPlugin}`);
     if (workerId) markWorker(workerId, result.task ?? null);
     if (once || role === "planner" || result.claimed === null || result.status === "failed") break;
     await wait(250);

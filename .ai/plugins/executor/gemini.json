@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "id": "gemini",
+  "role": "executor",
+  "transport": "cli",
+  "command": ["gemini", "-p", "{prompt}"],
+  "validate": ["gemini", "--version"],
+  "capabilities": { "roles": ["executor"], "features": ["code", "refactor"], "auth": true },
+  "description": "Gemini CLI executor adapter."
+}

@@ -20,13 +20,21 @@ const seed = (workflowId: string, implementer: string) => {
 };
 const statusOf = (workflowId: string, id: string) => taskMap(load(workflowStatePath(workflowId))).get(id)!.status;
 
-test("gate-runner drives an independent QA, review, and close for another client", () => {
+test("gate-runner performs QA but requires a reviewer artifact before close", () => {
   const workflowId = `node-gate-${Date.now().toString(36)}`;
   seed(workflowId, "codex");
   const acted = runGateCycle(workflowId, "gatekeeper");
   assert.deepEqual(
     acted.map((entry) => entry.action),
-    ["qa-pass", "review-approve", "close"],
+    ["qa-pass"],
+  );
+  assert.equal(statusOf(workflowId, "T1"), "qa-passed");
+
+  board.submitReview(workflowId, "T1", "reviewer", "approve", "reviewed");
+  const released = runGateCycle(workflowId, "gatekeeper");
+  assert.deepEqual(
+    released.map((entry) => entry.action),
+    ["close"],
   );
   assert.equal(statusOf(workflowId, "T1"), "done");
 });

@@ -14,10 +14,19 @@ import {
 } from "node:fs";
 import { hostname } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { kitArray } from "./config.js";
 
-export const ROOT = resolve(import.meta.dirname, "..", "..");
+// The kit root. Defaults to this file's grandparent, but AIKIT_ROOT lets the
+// runtime run against a relocated or shared kit without moving its own files.
+export const ROOT = process.env.AIKIT_ROOT ? resolve(process.env.AIKIT_ROOT) : resolve(import.meta.dirname, "..", "..");
+// In a global install ROOT is the shared runtime while PROJECT_ROOT is the
+// repository the command is acting on. Local installs keep the historic
+// behavior because both roots resolve to the same directory.
+export const PROJECT_ROOT = process.env.AIKIT_PROJECT_ROOT ? resolve(process.env.AIKIT_PROJECT_ROOT) : ROOT;
 export const WORK = process.env.AIKIT_WORK ? resolve(process.env.AIKIT_WORK) : join(ROOT, ".ai-work");
-export const STATE = join(WORK, "state", "workflow.json");
+// One layout: every workflow lives under .ai-work/workflows/<id>/. The default
+// single-state workflow is simply the "default" workflow.
+export const STATE = join(WORK, "workflows", "default", "state", "workflow.json");
 export const CURRENT = join(WORK, "state", "current.json");
 export const REGISTRY = join(WORK, "registry.json");
 export const WORKFLOWS = join(WORK, "workflows");
@@ -58,7 +67,16 @@ const STATUSES = new Set([
   "replaced",
   "blocked",
 ]);
-const TRANSITIONS: Record<string, [Set<string>, string]> = {
+export type TaskStatus =
+  | "todo"
+  | "in-progress"
+  | "implementation-complete"
+  | "qa-passed"
+  | "review-approved"
+  | "done"
+  | "replaced"
+  | "blocked";
+const TRANSITIONS: Record<string, [Set<TaskStatus>, TaskStatus]> = {
   start: [new Set(["todo"]), "in-progress"],
   complete: [new Set(["in-progress"]), "implementation-complete"],
   "qa-pass": [new Set(["implementation-complete"]), "qa-passed"],
@@ -70,7 +88,45 @@ const TRANSITIONS: Record<string, [Set<string>, string]> = {
 };
 
 export class EngineError extends Error {}
-export type Task = Record<string, any>;
+export interface Claim {
+  client_id: string;
+  attempt_id: string;
+  claimed_at: string;
+  lease_expires_at: string;
+}
+export interface Task {
+  id: string;
+  title: string;
+  owner: string;
+  phase: string;
+  needs: string[];
+  status: TaskStatus;
+  acceptance: string[];
+  files: string[];
+  tags: string[];
+  attempts: number;
+  evidence: string[];
+  blocked_reason: string | null;
+  claim?: Claim | null;
+  implementation_client?: string;
+  implementation_attempt?: string;
+  remediation_for?: string;
+}
+export interface Event {
+  seq: number;
+  ts: string;
+  action: string;
+  task: string | null;
+  actor: string;
+  from: string | null;
+  to: string | null;
+  detail: string;
+}
+export interface Phase {
+  id: string;
+  status: "complete" | "open" | "planned";
+  tasks: string[];
+}
 export type State = {
   version: number;
   revision: number;
@@ -78,14 +134,23 @@ export type State = {
   workflow: string;
   created_at: string;
   tasks: Task[];
-  phases: any[];
-  events: any[];
+  phases: Phase[];
+  events: Event[];
 };
 export const stamp = (date: Date) => date.toISOString().replace(/\.\d{3}Z$/, "Z");
 export const now = () => stamp(new Date());
+export const resolveProjectPath = (path: string) => {
+  if (isAbsolute(path)) return path;
+  const projectPath = join(PROJECT_ROOT, path);
+  return existsSync(projectPath) ? projectPath : join(ROOT, path);
+};
 export const displayPath = (path: string) => {
-  const item = relative(ROOT, path);
-  return item && !item.startsWith("..") ? item.replaceAll("\\", "/") : path;
+  for (const root of [PROJECT_ROOT, ROOT]) {
+    const item = relative(root, path);
+    if (item && !item.startsWith("..") && !isAbsolute(item)) return item.replaceAll("\\", "/");
+    if (item === "") return ".";
+  }
+  return path;
 };
 export const workspace = (path: string) =>
   basename(dirname(path)) === "state" ? dirname(dirname(path)) : join(dirname(path), basename(path, ".json"));
@@ -119,16 +184,7 @@ export const newState = (title: string, workflow: string): State => ({
   events: [],
 });
 export function configuredStack() {
-  const manifest = readFileSync(join(ROOT, ".ai", "kit.yaml"), "utf8"),
-    match = manifest.match(/^\s*stack:\s*\[([^\]]*)\]/m);
-  return new Set(
-    match
-      ? match[1]
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean)
-      : [],
-  );
+  return kitArray("stack");
 }
 export function routeTask(task: Task, statePath: string) {
   const stack = new Set([...configuredStack(), ...(task.tags ?? [])]),
@@ -356,12 +412,8 @@ export function event(
   writeFileSync(log, `${JSON.stringify(item)}\n`, { flag: "a" });
   return item;
 }
-export function addTask(path: string, input: any) {
-  const state = load<State>(path);
-  const tasks = taskMap(state);
-  if (tasks.has(input.id)) throw new EngineError(`task already exists: ${input.id}`);
-  if (!input.acceptance?.length) throw new EngineError("add-task requires at least one --acceptance criterion");
-  const task: Task = {
+function taskFromInput(input: any): Task {
+  return {
     id: input.id,
     title: input.title,
     owner: input.owner,
@@ -375,17 +427,42 @@ export function addTask(path: string, input: any) {
     evidence: [],
     blocked_reason: null,
   };
-  state.tasks.push(task);
-  validate(state);
-  syncPhases(state);
-  event(state, path, "add-task", task, input.actor ?? "planner", null, "todo", "task added");
-  save(state, path, input.expectedRevision ?? state.revision);
-  return task;
+}
+
+export function addTasks(path: string, inputs: any[]) {
+  if (!inputs.length) throw new EngineError("add-tasks requires at least one task");
+  const state = load<State>(path);
+  const tasks = taskMap(state);
+  const additions = inputs.map((input) => {
+    if (tasks.has(input.id)) throw new EngineError(`task already exists: ${input.id}`);
+    if (!input.acceptance?.length) throw new EngineError("add-task requires at least one --acceptance criterion");
+    const task = taskFromInput(input);
+    tasks.set(input.id, task);
+    return task;
+  });
+  const next: State = {
+    ...state,
+    tasks: [...state.tasks, ...additions],
+    phases: [...state.phases],
+    events: [...state.events],
+  };
+  validate(next);
+  syncPhases(next);
+  for (const [index, task] of additions.entries()) {
+    const input = inputs[index];
+    event(next, path, "add-task", task, input.actor ?? "planner", null, "todo", "task added");
+  }
+  save(next, path, inputs[0]?.expectedRevision ?? state.revision);
+  return additions;
+}
+
+export function addTask(path: string, input: any) {
+  return addTasks(path, [input])[0];
 }
 function validateEvidence(task: Task, action: string, items: string[]) {
   const expectedKind = action === "qa-pass" ? "qa" : "review";
   for (const item of items) {
-    const path = isAbsolute(item) ? item : join(ROOT, item);
+    const path = resolveProjectPath(item);
     if (!existsSync(path) || !path.endsWith(".json"))
       throw new EngineError(`${action} evidence must be an existing JSON file: ${item}`);
     let payload: any;
@@ -510,7 +587,9 @@ export function createWorkflow(id: string, title: string, workflow: string, acto
   }
 }
 export function makeClaim(clientId: string, task: Task, leaseSeconds = 300) {
-  if (!/^[A-Za-z0-9_.-]{1,80}$/.test(clientId)) throw new EngineError("client ID contains unsupported characters");
+  // Allow ":" so the standard "role:id" actor convention (e.g. "executor:codex")
+  // is a valid client id. It is not used in filesystem paths.
+  if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(clientId)) throw new EngineError("client ID contains unsupported characters");
   if (leaseSeconds < 15 || leaseSeconds > 3600) throw new EngineError("lease seconds must be between 15 and 3600");
   const claimed = new Date(),
     attempt = task.attempts + 1,

@@ -1,10 +1,23 @@
-import { openSync, closeSync, readdirSync, mkdirSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { ROOT, WORK, EngineError, displayPath, load, loadRegistry, now, roleNames, saveJson } from "./engine.js";
-import { type PluginRole } from "./artifacts.js";
+import { fileURLToPath } from "node:url";
+import {
+  PROJECT_ROOT,
+  ROOT,
+  WORK,
+  EngineError,
+  displayPath,
+  load,
+  loadRegistry,
+  now,
+  roleNames,
+  saveJson,
+} from "./engine.js";
+import { PluginRole } from "./artifacts.js";
 import { loadPlugin } from "./plugins.js";
+import { configuredPluginId } from "./models.js";
 
 const directory = () => {
   const path = join(WORK, "run", "workers");
@@ -49,7 +62,10 @@ export const listWorkers = (workflowId?: string) =>
     })
     .filter((x) => !workflowId || x.workflow_id === workflowId);
 export function startWorker(pluginId: string, workflowId: string, owner?: string, role: PluginRole = "executor") {
-  if (!loadRegistry().workflows.some((item: any) => item.id === workflowId))
+  if (
+    !loadRegistry().workflows.some((item: any) => item.id === workflowId) &&
+    !existsSync(join(WORK, "workflows", workflowId, "state", "workflow.json"))
+  )
     throw new EngineError(`unknown workflow: ${workflowId}`);
   loadPlugin(role, pluginId);
   if (owner && !roleNames().has(owner)) throw new Error(`unknown owner role: ${owner}`);
@@ -91,7 +107,7 @@ export function startWorker(pluginId: string, workflowId: string, owner?: string
   ];
   let child;
   try {
-    child = spawn(process.execPath, args, { cwd: ROOT, detached: true, stdio: ["ignore", fd, fd] });
+    child = spawn(process.execPath, args, { cwd: PROJECT_ROOT, detached: true, stdio: ["ignore", fd, fd] });
   } catch (error) {
     closeSync(fd);
     record.status = "failed";
@@ -128,6 +144,18 @@ export function stopWorker(id: string) {
     record.status = "stopping";
     event(record, "stop-requested");
     save(path, record);
+    if (record.pid && alive(record.pid)) {
+      try {
+        // Workers are detached into their own process group, so terminate the
+        // provider child together with the run-plugin parent on POSIX.
+        if (process.platform !== "win32") process.kill(-record.pid, "SIGTERM");
+        else process.kill(record.pid, "SIGTERM");
+      } catch {
+        try {
+          process.kill(record.pid, "SIGTERM");
+        } catch {}
+      }
+    }
   }
   return record;
 }
@@ -142,4 +170,46 @@ export function markWorker(id: string, task: string | null, stopped = false) {
   }
   event(record, stopped ? "stopped" : task ? "task" : "idle", task ?? "");
   save(path, record);
+}
+
+// CLI: `ai-kit:worker <start|stop|list|status>` so the orchestrator (and any UI)
+// can manage provider workers without embedding runtime logic.
+const isMain = !!process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (isMain) {
+  const argv = process.argv.slice(2);
+  const sub = argv.shift();
+  const opt = (key: string) => {
+    const index = argv.indexOf(key);
+    return index >= 0 ? argv[index + 1] : undefined;
+  };
+  const positional = argv.find((item) => !item.startsWith("--"));
+  try {
+    let output: unknown;
+    if (sub === "start") {
+      const workflowId = opt("--workflow-id");
+      if (!workflowId) throw new Error("worker start requires --workflow-id");
+      const roleName = opt("--role") ?? "executor";
+      if (!PluginRole.safeParse(roleName).success)
+        throw new Error("--role must be one of planner, executor, qa, reviewer");
+      const role = roleName as PluginRole;
+      const plugin = opt("--plugin") ?? configuredPluginId(role);
+      output = startWorker(plugin, workflowId, opt("--owner"), role);
+    } else if (sub === "stop") {
+      if (!positional) throw new Error("usage: worker stop <worker-id>");
+      output = stopWorker(positional);
+    } else if (sub === "list") {
+      output = listWorkers(opt("--workflow-id"));
+    } else if (sub === "status") {
+      if (!positional) throw new Error("usage: worker status <worker-id>");
+      output = workerStatus(positional);
+    } else {
+      throw new Error(
+        "usage: worker <start|stop|list|status> [--workflow-id ID] [--plugin ID] [--role ROLE] [--owner ROLE]",
+      );
+    }
+    console.log(JSON.stringify(output, null, 2));
+  } catch (error) {
+    console.error(`ERROR: ${(error as Error).message}`);
+    process.exitCode = 2;
+  }
 }

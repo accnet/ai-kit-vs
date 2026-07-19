@@ -7,6 +7,7 @@ import {
   artifactPath,
   displayArtifactPath,
   managedArtifactPath,
+  parseContextManifest,
   readArtifact,
   writeArtifact,
   type QaOutput,
@@ -15,6 +16,8 @@ import {
   type ResultOutput,
 } from "./artifacts.js";
 import { createWorktree, branch, mergeWorktree } from "./worktree.js";
+import { listCapabilities } from "./capabilities.js";
+import { buildBundle } from "./context-builder.js";
 
 const pathFor = (workflowId?: string, state?: string) =>
   state ?? (workflowId ? engine.workflowStatePath(workflowId) : engine.STATE);
@@ -50,25 +53,39 @@ function requireClaim(task: engine.Task, clientId: string, attemptId: string) {
 function manifest(task: engine.Task, attemptId: string, workflowId?: string, state?: string) {
   const route = engine.routeTask(task, pathFor(workflowId, state)),
     sources = [...route.context, ...route.skills].map((item) => {
-      const path = isAbsolute(item) ? item : join(engine.ROOT, item);
+      const path = engine.resolveProjectPath(item);
       return {
         path: item,
         sha256: existsSync(path) ? createHash("sha256").update(readFileSync(path)).digest("hex") : null,
       };
     });
-  const git = spawnSync("git", ["status", "--short"], { cwd: engine.ROOT, encoding: "utf8" });
+  const git = spawnSync("git", ["status", "--short"], { cwd: engine.PROJECT_ROOT, encoding: "utf8" });
+  // Context Builder: gather the multi-source bundle (Workspace/Git/Architecture/
+  // Requirement/Memory) — the same for Planner and Executor — and its ranked,
+  // token-budgeted selection.
+  const {
+    context,
+    workspace,
+    git: bundleGit,
+    architecture,
+    requirement,
+    memory,
+  } = buildBundle(task, pathFor(workflowId, state));
   const payload = {
     version: 1,
     task: task.id,
     attempt_id: attemptId,
     route,
     sources,
+    context,
+    bundle: { workspace, git: bundleGit, architecture, requirement, memory },
     git_status: git.status === 0 ? git.stdout.split(/\r?\n/).filter(Boolean) : [],
     generated_at: engine.now(),
   };
   const output = join(rootFor(workflowId, state), "context", `${task.id}-${attemptId}.json`);
   mkdirSync(join(rootFor(workflowId, state), "context"), { recursive: true });
-  writeFileSync(output, `${JSON.stringify(payload, null, 2)}\n`);
+  // Validate against the standard schema before persisting.
+  writeFileSync(output, `${JSON.stringify(parseContextManifest(payload), null, 2)}\n`);
   return output;
 }
 
@@ -93,13 +110,10 @@ export function applyPlanArtifact(workflowId: string, actor: string, output: str
   const plan = readArtifact(output, "plan") as PlanOutput;
   if (plan.workflow_id !== workflowId || plan.actor !== actor)
     throw new engine.EngineError("plan artifact does not match workflow or actor");
-  const state = engine.load<engine.State>(pathFor(workflowId));
-  const existing = engine.taskMap(state);
-  for (const task of plan.tasks) {
-    if (existing.has(task.id)) throw new engine.EngineError(`plan task already exists: ${task.id}`);
-    engine.addTask(pathFor(workflowId), { ...task, actor });
-    existing.set(task.id, task as engine.Task);
-  }
+  engine.addTasks(
+    pathFor(workflowId),
+    plan.tasks.map((task) => ({ ...task, actor })),
+  );
   return { workflow_id: workflowId, tasks: plan.tasks.map((task) => task.id), artifact: displayArtifactPath(output) };
 }
 export function ready(workflowId?: string, state?: string) {
@@ -135,9 +149,24 @@ export async function waitForEvents(workflowId: string, afterCursor = 0, waitMs 
     await new Promise((resolve) => setTimeout(resolve, Math.min(100, deadline - Date.now())));
   }
 }
+// Build a context manifest for the planner, which has no claimed task yet. It
+// routes a synthetic "planner" task so the planner receives the same ranked,
+// token-budgeted context (role contract, planner skills, plan docs, state schema)
+// as any other role — matching the "Context Builder -> Planner" step.
+export function planContext(workflowId: string, actor: string) {
+  const plannerTask = { id: "plan", owner: "planner", tags: [], files: [] } as unknown as engine.Task;
+  const attempt = `plan-${actor.replaceAll(/[^a-z0-9-]/gi, "-")}`;
+  return manifest(plannerTask, attempt, workflowId);
+}
 export function route(workflowId: string, taskId: string) {
   const { path, task } = taskAt(taskId, workflowId);
-  return engine.routeTask(task, path);
+  const routed = engine.routeTask(task, path);
+  // Surface capability bundles whose role contract covers this task's owner, so a
+  // consumer can load the packaged Agents + Skills without changing skill routing.
+  const capabilities = listCapabilities()
+    .filter((capability) => capability.agents.includes(task.owner))
+    .map((capability) => capability.id);
+  return { ...routed, capabilities };
 }
 export function claimNext(clientId: string, workflowId: string, owner?: string, leaseSeconds = 300) {
   const path = pathFor(workflowId);
@@ -179,7 +208,8 @@ export function getContext(workflowId: string, taskId: string, clientId: string,
 export function heartbeat(workflowId: string, taskId: string, clientId: string, attemptId: string, leaseSeconds = 300) {
   const { path, value, task } = taskAt(taskId, workflowId);
   requireClaim(task, clientId, attemptId);
-  task.claim.lease_expires_at = engine.stamp(new Date(Date.now() + leaseSeconds * 1000));
+  // requireClaim guarantees an owned, unexpired claim exists.
+  task.claim!.lease_expires_at = engine.stamp(new Date(Date.now() + leaseSeconds * 1000));
   engine.event(value, path, "heartbeat", task, clientId, "in-progress", "in-progress", "claim renewed");
   engine.save(value, path, value.revision);
   return task.claim;
@@ -338,14 +368,14 @@ export function pendingReview(workflowId: string) {
 }
 export function prepareWorktree(workflowId: string, taskId: string, base = "HEAD") {
   taskAt(taskId, workflowId);
-  return createWorktree(`${workflowId}/${taskId}`, engine.ROOT, base);
+  return createWorktree(`${workflowId}/${taskId}`, engine.PROJECT_ROOT, base);
 }
 export function mergeTask(workflowId: string, taskId: string, target = "main") {
   const { task } = taskAt(taskId, workflowId);
   if (task.status !== "done") return { merged: false, reason: `task is ${task.status}, must be done before merge` };
   return mergeWorktree(
     `${workflowId}/${taskId}`,
-    engine.ROOT,
+    engine.PROJECT_ROOT,
     task.needs.map((dependency: string) => branch(`${workflowId}/${dependency}`)),
     target,
   );

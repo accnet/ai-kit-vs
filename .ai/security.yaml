@@ -1,0 +1,19 @@
+# AI-Kit security policy.
+# Executables a plugin/provider is permitted to launch. Matched by command basename
+# (the Windows .exe/.cmd/.bat extension is ignored), or by the exact command string.
+# A plugin whose command[0] is not listed is rejected at load time.
+version: 1
+allowed_commands:
+  - node
+  - npx
+  - claude
+  - codex
+  - cursor-agent
+  - gpt
+  - qwen
+  - qwen-code
+  - gemini
+  - python
+  - python3
+# Set to true to disable enforcement entirely (NOT recommended).
+allow_any: false

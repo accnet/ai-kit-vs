@@ -1,14 +1,14 @@
 ﻿kit:
-  id: ai-kit-v2
-  version: 2.0.0
+  id: ai-kit
+  version: 1.0.0
   entrypoint: AGENTS.md
   work_dir: .ai-work
   skills_dir: .ai/skills
   registry: .ai/registry.yaml
 
 project:
-  stack: []
-  source_dirs: []
+  stack: [node]
+  source_dirs: [landing]
 
 verification:
   test_command: npm test

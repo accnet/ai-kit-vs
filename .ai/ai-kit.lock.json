@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "node_range": ">=22",
+  "runtime": {
+    "tsx": "4.23.1",
+    "zod": "4.3.6",
+    "@types/node": "24.10.1",
+    "prettier": "3.9.5",
+    "typescript": "5.9.3"
+  },
+  "runtime_source": {
+    ".ai/node/ai-kit.ts": "f7ce9b90e9ce80f8e67799c46a810d06ccf70fc5e48254d624ca34c0d57b686f",
+    ".ai/node/artifacts.ts": "a79b3a39ed7adf5362d3e914b658c18544b259cfb761d0fb5c33506b005645f7",
+    ".ai/node/board.ts": "c86186d54d4335d40edeedc030a150767ab39b386b468fa0c16ce4ebe96c8c5f",
+    ".ai/node/capabilities.ts": "d33bc23b793152910d54abbe69783d4d3c7f00216f83e090488dbd56a444784c",
+    ".ai/node/config.ts": "dadc677b5fc795ea6a40575018aae1da98182df5a068ad82fbca85020f08e4e2",
+    ".ai/node/context-builder.ts": "99f793ca7049393cf04d290df477ae85e8f77736b2ec55010f23a4dd618711e5",
+    ".ai/node/context.ts": "f63049478ba64bfbcd2d74e04fab057261714f71559a3f61a8004a2f992f1902",
+    ".ai/node/engine.ts": "c7d55ca10ded9f8c1f8751029366de0919ae78fad1e47ba2273c6d8b9de97fc8",
+    ".ai/node/gate-runner.ts": "28e6a10320aa3b1f1348b9ce788a9041500277526ab18007b2878d255af2bfcb",
+    ".ai/node/home.ts": "33b3440802c3fe2827981e1adef070b95b32f7b9b95d96bb35f6fcc6eb4bd99d",
+    ".ai/node/lockfile.ts": "f320cebd2f9b1785d980026363de229d499c5e6e2a162b120b05fddfc8edec4a",
+    ".ai/node/memory.ts": "a953b5ea3520e9317ddf174d84073a0acb80e78ad62641c5fb650068c46be254",
+    ".ai/node/models.ts": "220f3cb664cb2870ad65137a1e4ac7747a015a78445ab37d01ba9c28b9cac29a",
+    ".ai/node/package-lock.json": "bfe9f90efb5e7c1b7fde83a90c010db53c5851ed5e747c14d77b70967c6f7c4d",
+    ".ai/node/package.json": "a2d61558cf87e0c1e24c86da17159bb88118fc2ec8a10f66ca9257912da98d96",
+    ".ai/node/plugin-local.ts": "e1de59355cca3dfb1ee7e22cbe98aafad41559d77df0d161c8666f8476787924",
+    ".ai/node/plugins.ts": "24aa87a8561592d57136ae68997668196bb4e2ddaffab30f28a2bd4e855ca3f0",
+    ".ai/node/provider-adapter.ts": "aaa59c42d85bbfa04463ad95373e4f2bc08ba43b61811eedfe10b7540cb4bf09",
+    ".ai/node/provider.ts": "de781893a8b312737de8f92f3638c71ef584febe4a743e0c8fbc0a30dc68b895",
+    ".ai/node/run-plugin.ts": "128fa54df85ffadc3a0560689f46e0be7c11e1c7e57f8700d0b74c957d7cb634",
+    ".ai/node/runtime.ts": "77c61cac9aa3b10e2116927d91477a62fd62f80d858a61549b024479f32618f7",
+    ".ai/node/security.ts": "5749dfd7a784732678abe257955d86e650bea309cd0881ad70c7781755b602a5",
+    ".ai/node/worker-manager.ts": "8d469a84581dd894e9b3369332209de309d188ab79d830782bcf43e4e2ce511d",
+    ".ai/node/worktree.ts": "a1b925b51ff8f8601f9a749b8298181673c1a182dfec0a3bf76ecc4c5621ab03"
+  },
+  "plugins": {
+    ".ai/plugins/executor/claude-code.json": "98b991fcc0c312b37c1271a36a51f049c40be17c08cfef388aaaef4e746bf133",
+    ".ai/plugins/executor/claude.json": "e876b2a65ec8016e623004f39bf9c3839101554204f22ca903660ae3ed83e755",
+    ".ai/plugins/executor/codex.json": "63e4c0b8a7cb3395a6a273be0c3c233fdd94c561c4cb759c180aa9fe4a9e0e6b",
+    ".ai/plugins/executor/cursor.json": "9bc47659669779b0c7b47b38a970636e4887542548d105e20654b93398822aca",
+    ".ai/plugins/executor/gemini.json": "aaa588af51a5ca6fe83e9748d8c12bb1dfcdd6a9d9f26f7c74f663d63d33968b",
+    ".ai/plugins/executor/qwen.json": "d2388ebce801f0853deaf7665ff1e6ff8915eba95d72c20ffbb9b90576144c68",
+    ".ai/plugins/planner/claude.json": "4b85d0cf068a8d9a5635d4e7b04449637dce93795b36c35bd1ba9fe6e312c59c",
+    ".ai/plugins/planner/codex.json": "97e57a13a25fc4ee77a769697ba578d3b866490cf00c2d3a1a536213e6655a11",
+    ".ai/plugins/planner/cursor.json": "bab086baf61e8ed802dc44119716d949be23f160fd6ba5bbd41a51b2591596bb",
+    ".ai/plugins/planner/gpt.json": "3826281e78861c81fcf87ae58503ee74aef61bff21f45743be963c2a8aba9c8c",
+    ".ai/plugins/qa/local.json": "63277922f023f4bc31336c038d266635992b9c332205e94706d09e318b9d5cb1",
+    ".ai/plugins/reviewer/claude.json": "975fa944476fea2374ed0ab83f73908018e9c42e81a9eb09034d0e184dd48716",
+    ".ai/plugins/reviewer/codex.json": "f86eb3a5d86436fc7cc3342926284a97fefa5bdd5ffeb9fa54ae4089194a3207",
+    ".ai/plugins/reviewer/cursor.json": "50f1a68e5cd1cacf749a055cd42248cbe465409b3efae900845579685b6770d4",
+    ".ai/plugins/reviewer/gemini.json": "1b57a50d5c6266edec99b4c0fc50268870bdea779ca843ebad74a747d6062d00"
+  },
+  "capabilities": {
+    ".ai/capabilities/backend.json": "31ee604b44084eb3dca9104bfaaed75a8238110f1635af34932a2677d5e96225",
+    ".ai/capabilities/frontend.json": "2b216c330fe51c41ff6bdbbda9f5fe884903dbd633348c10f61e6001af47e3ae"
+  },
+  "security": "8aa47a7ca80dcb2a68e8cfa3c77aab1e8f6bd6e8085fef5f5f90b3fa24f04cc1",
+  "models": "97e7a7696543c1f80e4903aaa4da4cbad888539144ba6f3268f58565912fdf67",
+  "kit": "d5d4a578495c35f7875e9d4a83674fc9016342c53ebc6eadb941388ddb77bd9a",
+  "generated_at": "2026-07-19T04:11:34Z"
+}

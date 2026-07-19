@@ -6,6 +6,8 @@ SOURCE="$(cd "$(dirname "$0")" && pwd)"
 TARGET="$(cd "$SOURCE/.." && pwd)"
 FORCE=0
 DRY_RUN=0
+# shellcheck source=installer/lib.sh
+source "$SOURCE/installer/lib.sh"
 
 usage() {
   echo "Usage: bash ai-kit/install.sh [--target <project-root>] [--force] [--dry-run]"
@@ -25,14 +27,7 @@ done
 
 # Preflight: verify prerequisites BEFORE copying anything, so a missing tool
 # never leaves the target half-installed.
-NODE_BIN=""
-for candidate in node node.exe; do
-  if command -v "$candidate" >/dev/null 2>&1; then
-    major="$("$candidate" -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
-    if [[ "$major" -ge 22 ]]; then NODE_BIN="$candidate"; break; fi
-  fi
-done
-[[ -n "$NODE_BIN" ]] || { echo "Node.js >=22 is required but was not found on PATH." >&2; exit 1; }
+NODE_BIN="$(aikit_require_node)" || exit 1
 
 PM="${AIKIT_PM:-}"
 if [[ -z "$PM" ]]; then
@@ -46,7 +41,9 @@ command -v "$PM" >/dev/null 2>&1 || command -v "$PM.exe" >/dev/null 2>&1 || {
   echo "package manager '$PM' not found on PATH (set AIKIT_PM to override)." >&2; exit 1; }
 [[ -w "$TARGET" ]] || { echo "target directory is not writable: $TARGET" >&2; exit 1; }
 
-PATHS=(AGENTS.md CLAUDE.md GEMINI.md .ai .claude .cursor .codex/config.toml .githooks .github/copilot-instructions.md .github/workflows/gates.yml)
+# AGENTS.md is written separately from the minimal project template below — the
+# project only needs the agent-orchestration guide, not the kit's full spec.
+PATHS=(CLAUDE.md GEMINI.md .ai .claude .cursor .codex/config.toml .githooks .github/copilot-instructions.md .github/workflows/gates.yml)
 
 # Never copy local secrets: .env stays per-project; only .env.example travels.
 should_skip() {
@@ -93,6 +90,14 @@ for file in "${FILES[@]}"; do
   mkdir -p "$(dirname "$dest")"
   cp "$file" "$dest"
 done
+
+# The project's AGENTS.md is the minimal agent-orchestration guide (how to read
+# context and drive the CLI), not the kit's full canonical spec.
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  echo "write: AGENTS.md (minimal project orchestration guide)"
+else
+  cp "$SOURCE/.ai/templates/AGENTS.project.md" "$TARGET/AGENTS.md"
+fi
 
 if [[ "$DRY_RUN" -eq 0 ]]; then
   ignore="$TARGET/.gitignore"

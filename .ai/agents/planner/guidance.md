@@ -19,7 +19,7 @@ Convert a feature brief into an executable, ordered task plan.
 
 ## Inputs
 - `.ai-work/brief.md`
-- `.ai-work/context/*`
+- `.ai-work/workflows/<workflow-id>/context/*`
 - Project conventions (existing code + .ai/memory/conventions.md)
 
 ## Outputs

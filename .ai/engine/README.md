@@ -1,8 +1,9 @@
-﻿# AI-Kit v2 Control Plane
+﻿# AI-Kit 1.0 Control Plane
 
 The control plane is a Node.js TypeScript CLI for multi-agent workflow
 coordination. It is intentionally deterministic: Markdown describes work for
-humans, while `.ai-work/state/workflow.json` is the canonical runtime state.
+humans, while `.ai-work/workflows/<workflow-id>/state/workflow.json` is the
+canonical runtime state.
 
 ## Commands
 
@@ -27,7 +28,7 @@ bash .ai/scripts/ai-kit.sh transition T1 complete --actor planner --detail "Plan
 `qa-pass`, `review-approve`, and `close`. QA and review actions require an
 existing JSON evidence artifact. QA requires `{"kind":"qa","task":"T1","status":"pass"}`;
 review requires `{"kind":"review","task":"T1","verdict":"approve"}`. All state mutations append an event
-to `.ai-work/logs/events.jsonl`.
+to `.ai-work/workflows/<workflow-id>/logs/events.jsonl`.
 
 `onboard` previews detected host stack, source directories, and verification
 commands. Use `onboard --apply` only after reviewing the output; it backs up

@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "id": "gemini",
+  "role": "reviewer",
+  "transport": "cli",
+  "command": ["gemini", "-p", "{prompt}"],
+  "validate": ["gemini", "--version"],
+  "capabilities": { "roles": ["reviewer"], "features": ["review"], "auth": true },
+  "description": "Gemini CLI reviewer adapter."
+}

@@ -9,11 +9,10 @@ param(
 $source = (Resolve-Path $PSScriptRoot).Path
 $targetPath = (Resolve-Path $Target).Path
 if ($source -eq $targetPath) { throw 'Target cannot be the kit directory.' }
+. (Join-Path $PSScriptRoot "installer\lib.ps1")
 
 # Preflight: verify prerequisites BEFORE copying anything.
-if (-not (Get-Command node -ErrorAction SilentlyContinue)) { throw 'Node.js >=22 is required but was not found on PATH.' }
-$nodeMajor = [int](node -p "process.versions.node.split('.')[0]")
-if ($nodeMajor -lt 22) { throw "AI-Kit requires Node.js >=22 (found $(& node -v))." }
+Assert-AiKitNode
 
 $pm = if ($env:AIKIT_PM) { $env:AIKIT_PM }
       elseif (Test-Path -LiteralPath (Join-Path $targetPath 'pnpm-lock.yaml')) { 'pnpm' }
@@ -28,7 +27,8 @@ try {
     Remove-Item -LiteralPath $probe -Force
 } catch { throw "target directory is not writable: $targetPath" }
 
-$items = @('AGENTS.md','CLAUDE.md','GEMINI.md','.ai','.claude','.cursor','.codex/config.toml','.githooks','.github/copilot-instructions.md','.github/workflows/gates.yml')
+# AGENTS.md is written separately from the minimal project template below.
+$items = @('CLAUDE.md','GEMINI.md','.ai','.claude','.cursor','.codex/config.toml','.githooks','.github/copilot-instructions.md','.github/workflows/gates.yml')
 $files = foreach ($item in $items) {
     $path = Join-Path $source $item
     if (Test-Path -LiteralPath $path -PathType Container) { Get-ChildItem -LiteralPath $path -Recurse -File }
@@ -60,6 +60,13 @@ foreach ($file in $files) {
     if ($DryRun) { Write-Output "copy: $relative"; continue }
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
     Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
+}
+
+# The project's AGENTS.md is the minimal agent-orchestration guide, not the kit's full spec.
+if ($DryRun) {
+    Write-Output 'write: AGENTS.md (minimal project orchestration guide)'
+} else {
+    Copy-Item -LiteralPath (Join-Path $source '.ai/templates/AGENTS.project.md') -Destination (Join-Path $targetPath 'AGENTS.md') -Force
 }
 
 if (-not $DryRun) {

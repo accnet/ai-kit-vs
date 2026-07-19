@@ -1,10 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import * as board from "./board.js";
 import * as engine from "./engine.js";
+import { testCommand } from "./config.js";
 
 export type GateRoles = { qa: boolean; review: boolean; release: boolean };
 export const ALL_ROLES: GateRoles = { qa: true, review: true, release: true };
@@ -13,20 +13,13 @@ export type GateAction = { task: string; action: string };
 const taskById = (workflowId: string, id: string) =>
   engine.taskMap(engine.load<engine.State>(engine.workflowStatePath(workflowId))).get(id);
 
-const testCommand = () => {
-  const line = readFileSync(join(engine.ROOT, ".ai", "kit.yaml"), "utf8")
-    .split("\n")
-    .find((entry) => entry.trim().startsWith("test_command:"));
-  return line?.split(":").slice(1).join(":").trim() || undefined;
-};
-
 // Independent re-verification: a gate client re-runs the project test command
 // instead of trusting the executor's self-reported evidence.
 function verify(): boolean {
   if (process.env.AIKIT_SKIP_VERIFY) return true;
   const command = testCommand();
   if (!command) return true;
-  return spawnSync(command, { cwd: engine.ROOT, shell: true, encoding: "utf8" }).status === 0;
+  return spawnSync(command, { cwd: engine.PROJECT_ROOT, shell: true, encoding: "utf8" }).status === 0;
 }
 
 // One pass over a workflow's gates. Acts only on attempts implemented by a
@@ -56,13 +49,8 @@ export function runGateCycle(
           acted.push({ task: item.id, action: "qa-pass" });
         } catch {}
 
-  if (roles.review)
-    for (const item of board.pendingReview(workflowId).awaiting_review)
-      if (byOther(item.id))
-        try {
-          board.submitReview(workflowId, item.id, client, "approve", "auto-approved by gate-runner");
-          acted.push({ task: item.id, action: "review-approve" });
-        } catch {}
+  // Review must come from the configured reviewer plugin. The gate runner may
+  // close an already approved task, but it must never manufacture approval.
 
   if (roles.release)
     for (const task of engine.load<engine.State>(engine.workflowStatePath(workflowId)).tasks)

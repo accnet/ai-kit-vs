@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "id": "cursor",
+  "role": "reviewer",
+  "transport": "cli",
+  "command": ["cursor-agent", "-p", "{prompt}"],
+  "description": "Cursor CLI reviewer adapter."
+}

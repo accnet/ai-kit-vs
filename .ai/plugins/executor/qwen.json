@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "id": "qwen",
+  "role": "executor",
+  "transport": "cli",
+  "command": ["qwen", "-p", "{prompt}"],
+  "validate": ["qwen", "--version"],
+  "capabilities": { "roles": ["executor"], "features": ["code"], "auth": true },
+  "description": "Qwen Code CLI executor adapter."
+}

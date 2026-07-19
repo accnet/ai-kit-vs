@@ -1,15 +1,17 @@
-# AI-Kit v2
+# AI-Kit
+
+**Name:** ai-kit **Version:** 1.0.0
 
 This is the canonical entry point for every coding agent working in this
 repository. Read it before planning, editing, reviewing, or releasing work.
 
 ## Source Of Truth
 
-AI-Kit v2 is the source of truth for its architecture, paths, and contracts.
-The earlier kit has been retired; its reusable guidance was adapted into v2 and
-the migration record is kept in `.ai/memory/migration-v1.md`.
+AI-Kit is the source of truth for its architecture, paths, and contracts.
+The earlier kit has been retired; its reusable guidance was adapted into this
+kit and the migration record is kept in `.ai/memory/migration-v1.md`.
 
-Keep these v2 contracts stable:
+Keep these core contracts stable:
 
 - `.ai/agents/<role>/` is a six-document role contract: `role.md`, `input.md`,
   `rules.md`, `prompt.md`, `checklist.md`, and `output.md`.
@@ -19,8 +21,12 @@ Keep these v2 contracts stable:
 - `.ai/workflows/<intent>/workflow.md` defines the delivery path.
 - `.ai-work/` holds disposable work state, plans, tasks, reports, and logs.
 
+Agents and Skills are first-class and permanent. Capability manifests
+(`.ai/capabilities/<id>.json`) only *reference and package* them — they never
+move or replace `.ai/agents` or `.ai/skills`.
+
 Never rename, flatten, or replace these contracts as part of importing an idea
-from v1. Adapt the idea to the v2 contract instead.
+from the earlier kit. Adapt the idea to the current contract instead.
 
 ## Tool Compatibility
 
@@ -45,7 +51,7 @@ clear inputs and outputs, and a way to verify its use. Do not create skeletons,
 empty placeholders, duplicate prompts, or generic content that cannot guide a
 real task.
 
-AI-Kit v2 is evolving into an executable multi-agent workflow engine for
+AI-Kit is an executable multi-agent workflow engine for
 controlled delivery of large projects in Codex and VS Code. It is not complete
 until the orchestration components below have executable interfaces, durable
 state transitions, and automated tests. Do not describe a prompt convention as
@@ -93,7 +99,7 @@ Before a component is marked implemented, provide:
 - A persisted schema or explicitly versioned state format.
 - Tests for normal, blocked, invalid, and recovery paths.
 - An observable audit record explaining decisions and transitions.
-- Compatibility with the stable v2 directory contracts above.
+- Compatibility with the stable directory contracts above.
 
 ## Startup Procedure
 
@@ -151,7 +157,7 @@ For a new idea, `plan` creates these initial artifacts:
 - `.ai-work/roadmap/roadmap.md`
 - `.ai-work/plan/plan.md`
 - `.ai-work/tasks/tasks.md`
-- `.ai-work/state/workflow.json` as the canonical lifecycle state
+- `.ai-work/workflows/<workflow-id>/state/workflow.json` as the canonical lifecycle state
 
 Work in dependency order. Parallel work must have disjoint file ownership or
 an explicit integration owner. Re-plan when scope changes; do not silently
@@ -202,7 +208,7 @@ retries or mark partial work complete.
 Start from the owned task and nearby source. Load the smallest useful context:
 the selected workflow, role contract, relevant skills, code, and tests. Keep
 session-specific notes in `.ai-work/`. Promote durable conventions or decisions
-only to the appropriate committed v2 documentation, never by treating
+only to the appropriate committed documentation, never by treating
 `.ai-work/` as permanent truth.
 
 ## Change Discipline
@@ -229,3 +235,33 @@ bash .ai/scripts/check-gates.sh all
 
 Run `bash .ai/scripts/doctor.sh` after installing the kit or changing its
 configuration. CI runs the same portable checks on GitHub.
+
+## Runtime Capabilities (1.0)
+
+The control plane exposes these commands via `npm run ai-kit -- <command>`
+(state commands accept `--state <path>`):
+
+- Workflow: `init`, `plan`, `workflow-create`, `workflows`, `add-task`, `ready`,
+  `transition`, `validate`, `show`, `status`, `timeline`, `blocked`, `graph`,
+  `route`, `onboard`.
+- Capabilities: `capabilities [id] [--kind knowledge|framework|language|tool]`
+  lists or resolves capability manifests over Agents and Skills.
+- Reproducibility: `lock` writes `.ai/ai-kit.lock.json`; `verify-lock` reports
+  drift in runtime versions, runtime source, plugin/capability/config hashes. It pins process
+  and configuration, not model output.
+- Global home: `home [--init]` manages the shared `~/ai-kit/` runtime
+  (`AIKIT_HOME` override). Project plugins shadow global ones.
+- Providers run through the CLI provider adapter
+  (`.ai/engine/provider-adapter.md`), and only executables allowlisted in
+  `.ai/security.yaml` may launch.
+
+Automation entry points (separate npm scripts):
+
+- `npm run ai-kit:worker -- <start|stop|list|status>` manages provider workers
+  (`start --workflow-id ID [--role executor|qa|reviewer|planner] [--plugin ID]`).
+- `npm run ai-kit:gate -- <workflow-id> [--once] [--verify]` runs independent QA
+  and closes tasks only after a reviewer plugin has approved them.
+
+The VS Code extension in `extension/` is a thin UI client that shells out to
+these commands (read-only views plus start-worker / run-gates controls) and holds
+no AI logic.

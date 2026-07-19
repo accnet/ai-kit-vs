@@ -3,6 +3,6 @@
   "id": "local",
   "role": "qa",
   "transport": "cli",
-  "command": ["node", ".ai/node/node_modules/tsx/dist/cli.mjs", ".ai/node/plugin-local.ts", "{input}", "{output}"],
+  "command": ["node", "{runtime}/.ai/node/node_modules/tsx/dist/cli.mjs", "{runtime}/.ai/node/plugin-local.ts", "{input}", "{output}"],
   "description": "Local deterministic QA adapter for configured checks."
 }

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
-import { ROOT, WORK } from "./engine.js";
+import { displayPath, WORK } from "./engine.js";
 
 export class ArtifactError extends Error {}
 export const PluginRole = z.enum(["planner", "executor", "qa", "reviewer"]);
@@ -59,6 +59,41 @@ export type QaOutput = z.infer<typeof QaArtifact>;
 export type ReviewOutput = z.infer<typeof ReviewArtifact>;
 export type PlanOutput = z.infer<typeof PlanArtifact>;
 
+// The context manifest written per claim: the Router route, hashed sources, and
+// the Context Engine's ranked, token-budgeted selection. Standardized like every
+// other artifact in .ai-work.
+export const ContextManifest = z.object({
+  version: z.literal(1),
+  task: z.string(),
+  attempt_id: z.string(),
+  route: z.record(z.string(), z.unknown()),
+  sources: z.array(z.object({ path: z.string(), sha256: z.string().nullable() })),
+  context: z.object({
+    budget_tokens: z.number(),
+    total_tokens: z.number(),
+    included: z.array(z.object({ path: z.string(), tokens: z.number() })),
+    skipped: z.array(z.object({ path: z.string(), tokens: z.number() })),
+  }),
+  // The Context Builder's multi-source gather (Workspace/Git/Architecture/
+  // Requirement/Memory) that produced the ranked selection above.
+  bundle: z.object({
+    workspace: z.array(z.string()),
+    git: z.object({ branch: z.string().nullable(), changed: z.array(z.string()) }),
+    architecture: z.array(z.string()),
+    requirement: z.object({ acceptance: z.array(z.string()), docs: z.array(z.string()) }),
+    memory: z.array(z.object({ kind: z.string(), title: z.string(), path: z.string() })),
+  }),
+  git_status: z.array(z.string()),
+  generated_at: z.string(),
+});
+export type ContextManifest = z.infer<typeof ContextManifest>;
+export function parseContextManifest(value: unknown): ContextManifest {
+  const result = ContextManifest.safeParse(value);
+  if (!result.success)
+    throw new ArtifactError(`context manifest is invalid: ${result.error.issues[0]?.message ?? "schema error"}`);
+  return result.data;
+}
+
 const schemas = {
   result: ResultArtifact,
   qa: QaArtifact,
@@ -91,7 +126,7 @@ export const artifactDirectory = (workflowId: string, kind: ArtifactKind) =>
   join(workflowRoot(workflowId), "artifacts", kind);
 export const artifactPath = (workflowId: string, kind: ArtifactKind, name: string) =>
   join(artifactDirectory(workflowId, kind), `${name}.json`);
-export const displayArtifactPath = (path: string) => relative(ROOT, path).replaceAll("\\", "/");
+export const displayArtifactPath = (path: string) => displayPath(path);
 
 export function managedArtifactPath(workflowId: string, path: string) {
   const root = resolve(workflowRoot(workflowId));

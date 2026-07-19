@@ -1,0 +1,65 @@
+{
+  "name": "ai-kit-vscode",
+  "displayName": "AI-Kit",
+  "description": "Thin VS Code client for the AI-Kit runtime. UI only — all logic lives in the AI-Kit runtime.",
+  "version": "1.0.0",
+  "publisher": "ai-kit",
+  "license": "MIT",
+  "private": true,
+  "engines": { "vscode": "^1.90.0" },
+  "categories": ["Other"],
+  "activationEvents": ["onView:aiKit.tree"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [{ "id": "aiKit", "title": "AI-Kit", "icon": "media/icon.svg" }]
+    },
+    "views": {
+      "aiKit": [{ "id": "aiKit.tree", "name": "Workflow" }]
+    },
+    "commands": [
+      { "command": "aiKit.refresh", "title": "AI-Kit: Refresh", "icon": "$(refresh)" },
+      { "command": "aiKit.startExecutor", "title": "AI-Kit: Start Executor Worker", "icon": "$(play)" },
+      { "command": "aiKit.startQa", "title": "AI-Kit: Start QA Worker" },
+      { "command": "aiKit.startReviewer", "title": "AI-Kit: Start Reviewer Worker" },
+      { "command": "aiKit.runGates", "title": "AI-Kit: Run Gates", "icon": "$(check-all)" },
+      { "command": "aiKit.stopWorker", "title": "AI-Kit: Stop Worker" }
+    ],
+    "menus": {
+      "view/title": [
+        { "command": "aiKit.refresh", "when": "view == aiKit.tree", "group": "navigation" },
+        { "command": "aiKit.runGates", "when": "view == aiKit.tree", "group": "navigation" }
+      ]
+    },
+    "configuration": {
+      "title": "AI-Kit",
+      "properties": {
+        "aiKit.nodePath": {
+          "type": "string",
+          "default": "node",
+          "description": "Path to the Node.js binary used to run the AI-Kit runtime."
+        },
+        "aiKit.home": {
+          "type": "string",
+          "default": "",
+          "description": "Optional AI-Kit home. Defaults to AIKIT_HOME or ~/ai-kit when the project has no local runtime."
+        },
+        "aiKit.autoRefreshSeconds": {
+          "type": "number",
+          "default": 0,
+          "description": "Auto-refresh the AI-Kit view every N seconds (0 = manual only)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.2.0",
+    "typescript": "5.9.3"
+  }
+}

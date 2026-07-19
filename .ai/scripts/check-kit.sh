@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validate the v2 layouts without requiring a Git repository or YAML parser.
+# Validate the AI-Kit layouts without requiring a Git repository or YAML parser.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -12,7 +12,7 @@ ok() { printf '  ok   %s\n' "$1"; }
 [[ -f .ai/node/package.json ]] || bad ".ai/node/package.json missing"
 [[ -f .ai/scripts/ai-kit.sh ]] || bad ".ai/scripts/ai-kit.sh missing"
 [[ -f .ai/scripts/install-node-runtime.mjs ]] || bad ".ai/scripts/install-node-runtime.mjs missing"
-[[ -f package.json ]] || bad "package.json missing"
+[[ -f .ai/kit.yaml ]] || bad ".ai/kit.yaml missing"
 [[ -f .ai/engine/state-schema.md ]] || bad ".ai/engine/state-schema.md missing"
 for adapter in .github/copilot-instructions.md .github/workflows/gates.yml .cursor/rules/ai-kit.mdc GEMINI.md .githooks/pre-commit; do
   [[ -s "$adapter" ]] || bad "$adapter missing or empty"
@@ -43,5 +43,5 @@ for template in .ai/templates/*.md; do
   [[ -s "$template" ]] || bad "$template missing or empty"
 done
 
-[[ "$fail" -eq 0 ]] && { ok "all v2 contracts are present"; exit 0; }
+[[ "$fail" -eq 0 ]] && { ok "all AI-Kit contracts are present"; exit 0; }
 exit 1

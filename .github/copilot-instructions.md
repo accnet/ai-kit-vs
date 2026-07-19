@@ -1,4 +1,4 @@
-# AI-Kit v2 for GitHub Copilot
+# AI-Kit 1.0 for GitHub Copilot
 
 Read and follow `AGENTS.md` before responding or editing. It is the canonical
 source for workflow state, planning gates, role contracts, skills, and

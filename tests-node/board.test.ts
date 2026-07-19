@@ -4,7 +4,8 @@ import { createHash } from "node:crypto";
 import { join } from "node:path";
 import test from "node:test";
 import * as board from "../.ai/node/board.js";
-import { CURRENT } from "../.ai/node/engine.js";
+import { artifactPath, writeArtifact } from "../.ai/node/artifacts.js";
+import { CURRENT, load, workflowStatePath } from "../.ai/node/engine.js";
 
 test("Node board enforces a claimed attempt and independent gates", () => {
   const workflowId = `node-board-${Date.now().toString(36)}`;
@@ -59,6 +60,46 @@ test("Node board creates remediation work when review requests changes", () => {
   );
 });
 
+test("Node board applies a plan atomically, including dependencies declared out of order", () => {
+  const workflowId = `node-plan-${Date.now().toString(36)}`;
+  board.createWorkflow("Node plan", "feature", workflowId, "planner");
+  const output = artifactPath(workflowId, "plan", "planner");
+  writeArtifact(output, "plan", {
+    version: 1,
+    kind: "plan",
+    workflow_id: workflowId,
+    actor: "planner",
+    goal: "atomic plan",
+    tasks: [
+      { id: "T2", title: "second", owner: "backend", phase: "build", needs: ["T1"], acceptance: ["second"] },
+      { id: "T1", title: "first", owner: "backend", phase: "build", needs: [], acceptance: ["first"] },
+    ],
+  });
+  board.applyPlanArtifact(workflowId, "planner", output);
+  assert.deepEqual(
+    load<any>(workflowStatePath(workflowId)).tasks.map((task: any) => task.id),
+    ["T2", "T1"],
+  );
+
+  const invalid = artifactPath(workflowId, "plan", "invalid");
+  writeArtifact(invalid, "plan", {
+    version: 1,
+    kind: "plan",
+    workflow_id: workflowId,
+    actor: "planner",
+    goal: "invalid plan",
+    tasks: [
+      { id: "T3", title: "partial", owner: "backend", phase: "build", needs: [], acceptance: ["partial"] },
+      { id: "T3", title: "duplicate", owner: "backend", phase: "build", needs: [], acceptance: ["duplicate"] },
+    ],
+  });
+  assert.throws(() => board.applyPlanArtifact(workflowId, "planner", invalid), /task already exists/);
+  assert.equal(
+    load<any>(workflowStatePath(workflowId)).tasks.some((task: any) => task.id === "T3"),
+    false,
+  );
+});
+
 test("Node board event polling returns after a bounded empty wait", async () => {
   const workflowId = `node-poll-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
   board.createWorkflow("event polling", "feature", workflowId);
@@ -108,5 +149,9 @@ test("Node claim reads routed skill sources and persists a scoped context manife
     manifest.sources.some((item: any) => item.path.startsWith(".ai/skills/backend/")),
     false,
   );
+  // Context Engine: the manifest carries a ranked, token-budgeted selection.
+  assert.ok(Array.isArray(manifest.context.included) && manifest.context.included.length > 0);
+  assert.equal(manifest.context.included[0].path, ".ai/engine/state-schema.md");
+  assert.ok(typeof manifest.context.total_tokens === "number");
   assert.deepEqual(board.getContext(workflowId, "T1", "context-executor", claim.claim.attempt_id), manifest);
 });

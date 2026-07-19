@@ -2,7 +2,8 @@
 
 Each registered workflow is stored at `.ai-work/workflows/<workflow-id>/state/workflow.json`.
 `.ai-work/registry.json` indexes its ID, title, workflow type, state path, and creation time.
-The legacy `.ai-work/state/workflow.json` path remains valid for direct CLI use.
+The legacy `.ai-work/state/workflow.json` path is migrated by `bootstrap.sh` and
+remains available only as an input to that migration.
 
 `workflow.json` contains `version`, `title`, `workflow`, `tasks`, `phases`, and
 append-only `events`. A task has `id`, `title`, `owner`, `phase`, `needs`, `status`,
