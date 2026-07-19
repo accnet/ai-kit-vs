@@ -46,3 +46,21 @@ test("agent client claims, loads context, submits evidence, and preserves gates"
   agent.submitReview(workflowId, "T1", "claude-extension", "approve", "approved");
   assert.equal(board.close(workflowId, "T1", "gatekeeper").status, "done");
 });
+
+test("agent claims accept an explicit longer lease for editor clients", () => {
+  const workflowId = `agent-lease-${Date.now().toString(36)}`;
+  board.createWorkflow("Agent lease", "feature", workflowId, "planner");
+  board.addTask({
+    workflow_id: workflowId,
+    id: "T1",
+    title: "long build",
+    owner: "backend",
+    phase: "build",
+    acceptance: ["lease is configurable"],
+  });
+  const before = Date.now();
+  const claim: any = agent.claim(workflowId, "codex-extension", undefined, 1200);
+  const expires = Date.parse(claim.claim.lease_expires_at);
+  assert.ok(expires - before >= 1199000);
+  assert.ok(expires - before <= 1201000);
+});

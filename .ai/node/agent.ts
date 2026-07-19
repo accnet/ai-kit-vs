@@ -3,8 +3,8 @@ import * as board from "./board.js";
 
 // Extension agents use this control-plane surface instead of editing workflow
 // state or artifacts directly.
-export function claim(workflowId: string, clientId: string, owner?: string) {
-  const result: any = board.claimNext(clientId, workflowId, owner);
+export function claim(workflowId: string, clientId: string, owner?: string, leaseSeconds?: number) {
+  const result: any = board.claimNext(clientId, workflowId, owner, leaseSeconds);
   if (!result.claimed) return result;
   const assignment = artifactPath(workflowId, "assignment", `agent-${result.claimed}-${result.claim.attempt_id}`);
   writeArtifact(assignment, "assignment", {

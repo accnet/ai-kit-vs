@@ -33,6 +33,12 @@ const taskAt = (taskId: string, workflowId?: string, state?: string) => {
 const expired = (task: engine.Task) => !!task.claim && Date.parse(task.claim.lease_expires_at) <= Date.now();
 const owns = (task: engine.Task, clientId: string, attemptId: string) =>
   !expired(task) && task.claim?.client_id === clientId && task.claim?.attempt_id === attemptId;
+const DEFAULT_LEASE_SECONDS = 900;
+
+function configuredLeaseSeconds() {
+  const value = Number(process.env.AIKIT_LEASE_SECONDS ?? DEFAULT_LEASE_SECONDS);
+  return Number.isInteger(value) && value >= 15 && value <= 3600 ? value : DEFAULT_LEASE_SECONDS;
+}
 
 function hashSource(path: string): string | null {
   if (!existsSync(path)) return null;
@@ -188,7 +194,12 @@ export function route(workflowId: string, taskId: string) {
     .map((capability) => capability.id);
   return { ...routed, capabilities };
 }
-export function claimNext(clientId: string, workflowId: string, owner?: string, leaseSeconds = 300) {
+export function claimNext(
+  clientId: string,
+  workflowId: string,
+  owner?: string,
+  leaseSeconds = configuredLeaseSeconds(),
+) {
   const path = pathFor(workflowId);
   recover(path);
   for (let retry = 0; retry < 6; retry++) {
@@ -225,7 +236,13 @@ export function getContext(workflowId: string, taskId: string, clientId: string,
   if (!existsSync(path)) throw new engine.EngineError(`context manifest not found for ${taskId}`);
   return JSON.parse(readFileSync(path, "utf8"));
 }
-export function heartbeat(workflowId: string, taskId: string, clientId: string, attemptId: string, leaseSeconds = 300) {
+export function heartbeat(
+  workflowId: string,
+  taskId: string,
+  clientId: string,
+  attemptId: string,
+  leaseSeconds = configuredLeaseSeconds(),
+) {
   const { path, value, task } = taskAt(taskId, workflowId);
   requireClaim(task, clientId, attemptId);
   // requireClaim guarantees an owned, unexpired claim exists.
@@ -373,6 +390,7 @@ export function pendingReview(workflowId: string) {
       id: task.id,
       title: task.title,
       owner: task.owner,
+      phase: task.phase,
       acceptance: task.acceptance,
       files: task.files,
       evidence: task.evidence,

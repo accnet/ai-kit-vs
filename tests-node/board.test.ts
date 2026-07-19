@@ -23,6 +23,7 @@ test("Node board enforces a claimed attempt and independent gates", () => {
   assert.equal(claim.claimed, "T1");
   assert.throws(() => board.submitResult(workflowId, "T1", "other", claim.claim.attempt_id, "forged"));
   board.submitResult(workflowId, "T1", "codex-worker", claim.claim.attempt_id, "done");
+  assert.equal(board.pendingReview(workflowId).awaiting_qa[0].phase, "build");
   assert.throws(() => board.submitQa(workflowId, "T1", "codex-worker", "pass", "self check"));
   board.submitQa(workflowId, "T1", "qa-worker", "pass", "independent check");
   board.submitReview(workflowId, "T1", "reviewer", "approve");

@@ -21,6 +21,16 @@ export type VerificationResult = {
   summary: string;
 };
 
+export function verifyTask(
+  task: Pick<engine.Task, "phase">,
+  checks = verificationCommands(),
+  cwd = verificationCwd(),
+): VerificationResult {
+  if (!checks.length && task.phase === "plan")
+    return { passed: true, commands: [], summary: "planning task: project verification not required" };
+  return verify(checks, cwd);
+}
+
 // Independent re-verification: a gate client re-runs every declared project
 // check instead of trusting the executor's self-reported evidence.
 export function verify(checks = verificationCommands(), cwd = verificationCwd()): VerificationResult {
@@ -73,9 +83,6 @@ export function runGateCycle(
 ): GateAction[] {
   const acted: GateAction[] = [];
   const policy = microTaskPolicy();
-  const verification = reverify
-    ? verify()
-    : ({ passed: true, commands: [], summary: "verification bypassed by caller" } satisfies VerificationResult);
   const isMicro = (id: string) => {
     const task = taskById(workflowId, id);
     return policy.enabled && task?.tags.includes("micro");
@@ -86,6 +93,9 @@ export function runGateCycle(
     for (const item of board.pendingReview(workflowId).awaiting_qa)
       if (byOther(item.id) && (!isMicro(item.id) || policy.requireQa))
         try {
+          const verification = reverify
+            ? verifyTask(item)
+            : ({ passed: true, commands: [], summary: "verification bypassed by caller" } satisfies VerificationResult);
           board.submitQa(
             workflowId,
             item.id,

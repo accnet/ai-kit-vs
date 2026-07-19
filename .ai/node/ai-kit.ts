@@ -210,6 +210,7 @@ Options:
 Common options:
   --workflow-id <id>   Target workflow (required)
   --client-id <id>     Calling extension or worker (required)
+  --lease-seconds <n>  Claim lease duration for agent claim (15..3600)
   -h, --help           Show this help`,
   roles: `Usage: ai-kit roles
 
@@ -578,7 +579,17 @@ const handlers: Record<string, () => unknown> = {
     const sub = argv.shift();
     const workflowId = one("workflow-id", true)!;
     const clientId = one("client-id", true)!;
-    if (sub === "claim") return runtime.agent.claim(workflowId, clientId, one("owner"));
+    if (sub === "claim") {
+      const rawLease = one("lease-seconds");
+      let leaseSeconds: number | undefined;
+      if (rawLease !== undefined) {
+        const parsed = Number(rawLease);
+        if (!Number.isInteger(parsed) || parsed < 15 || parsed > 3600)
+          throw new EngineError("--lease-seconds must be an integer between 15 and 3600");
+        leaseSeconds = parsed;
+      }
+      return runtime.agent.claim(workflowId, clientId, one("owner"), leaseSeconds);
+    }
     if (sub === "context")
       return runtime.agent.context(workflowId, one("task-id", true)!, clientId, one("attempt-id", true)!);
     if (sub === "heartbeat")

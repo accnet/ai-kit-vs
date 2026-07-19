@@ -78,7 +78,9 @@ export function prompt(role: PluginRole, input: string, output: string) {
   ].join("\n");
 }
 
-const LEASE_SECONDS = 300;
+const configuredLease = Number(process.env.AIKIT_LEASE_SECONDS ?? "900");
+const LEASE_SECONDS =
+  Number.isInteger(configuredLease) && configuredLease >= 15 && configuredLease <= 3600 ? configuredLease : 900;
 const HEARTBEAT_MS = (LEASE_SECONDS * 1000) / 3; // renew well before the lease expires
 
 export async function runOnce(role: PluginRole, id: string, workflow: string, actor = `${role}:${id}`) {

@@ -268,6 +268,10 @@ Automation entry points (global launchers):
   by default and closes tasks only after a reviewer plugin has approved them.
   `--skip-verify` is an explicit local bypass; `--roles review` is rejected
   because review must be submitted through `ai-kit agent review`.
+- Planning tasks without verification commands are QA-passable; implementation
+  tasks remain fail-closed until project verification is configured. Editor
+  claims default to a 900-second lease and accept `--lease-seconds <n>` or
+  `AIKIT_LEASE_SECONDS`; long-running clients should heartbeat periodically.
 
 The VS Code extension in `extension/` is a thin UI client that shells out to
 these commands (read-only views plus start-worker / run-gates controls) and holds

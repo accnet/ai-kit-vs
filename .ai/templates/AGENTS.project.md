@@ -90,7 +90,9 @@ batch or bypass the State Manager with hand-edited lifecycle JSON.
 Codex, Claude, Cline, and other editor agents are clients of AI-Kit. They must
 use `ai-kit agent claim` before editing, read the returned context manifest,
 send periodic heartbeats for long work, and submit exactly one result through
-`ai-kit agent result`. They may edit project files, but must never edit
+`ai-kit agent result`. Editor claims last 900 seconds by default; use
+`--lease-seconds <n>` or `AIKIT_LEASE_SECONDS` when a task needs a different
+duration. They may edit project files, but must never edit
 `.ai-work/workflows/` directly. QA, review, and release gates remain owned by
 independent AI-Kit clients.
 

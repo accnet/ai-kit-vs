@@ -4,7 +4,7 @@ import test from "node:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as board from "../.ai/node/board.js";
-import { runGateCycle, verify } from "../.ai/node/gate-runner.js";
+import { runGateCycle, verify, verifyTask } from "../.ai/node/gate-runner.js";
 import type { VerificationCheck } from "../.ai/node/config.js";
 import { load, taskMap, workflowStatePath } from "../.ai/node/engine.js";
 
@@ -76,6 +76,19 @@ test("gate verification does not execute shell chaining from project config", ()
   const result = verify([{ name: "test_command", command }], project);
   assert.equal(result.passed, true, result.summary);
   assert.equal(existsSync(join(project, "pwned")), false);
+});
+
+test("planning tasks pass QA without project verification commands", () => {
+  const result = verifyTask({ phase: "plan" }, [], process.cwd());
+  assert.equal(result.passed, true);
+  assert.deepEqual(result.commands, []);
+  assert.match(result.summary, /planning task/);
+});
+
+test("implementation tasks still fail closed without project verification commands", () => {
+  const result = verifyTask({ phase: "build" }, [], process.cwd());
+  assert.equal(result.passed, false);
+  assert.match(result.summary, /no verification commands are configured/);
 });
 
 test("default gate reports an explicit verification bypass", () => {

@@ -125,6 +125,11 @@ directories, verification cwd, and all verification commands. The gate runs
 every non-empty verification command by default. Use `--skip-verify` only for
 an explicitly controlled local bypass. Verification commands are parsed into
 argv, checked against the executable allowlist, and never run through a shell.
+Planning tasks without implementation files do not require project verification;
+implementation tasks still fail closed when no verification command is
+configured. Editor claims use a 900-second lease by default. Set
+`AIKIT_LEASE_SECONDS` or pass `--lease-seconds <n>` to `agent claim` for a
+different duration, and send `agent heartbeat` during long work.
 Fresh projects default AI providers to
 `off`; select them once during setup, for example:
 
@@ -227,7 +232,7 @@ ai-kit-gate default --once
 Editor agents can use the same control plane without a provider CLI worker:
 
 ```bash
-ai-kit agent claim --workflow-id default --client-id codex-extension
+ai-kit agent claim --workflow-id default --client-id codex-extension --lease-seconds 1200
 ai-kit agent context --workflow-id default --task-id T1 --client-id codex-extension --attempt-id ATTEMPT
 ai-kit agent result --workflow-id default --task-id T1 --client-id codex-extension --attempt-id ATTEMPT --status pass --summary "implemented"
 ```
