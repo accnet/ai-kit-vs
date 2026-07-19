@@ -216,6 +216,15 @@ export function workflowId(id: string) {
     throw new EngineError("workflow ID must use lowercase letters, numbers, and hyphens");
   return id;
 }
+// Task IDs are embedded verbatim into artifact and worktree filesystem paths
+// (artifacts.ts artifactPath, worktree.ts worktreePath). Path separators or a
+// bare ".." segment would let a task ID escape the workflow's directory, so
+// this charset excludes them by construction.
+export function taskId(id: string) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(id))
+    throw new EngineError(`task ID must use letters, numbers, dots, hyphens, and underscores: ${id}`);
+  return id;
+}
 export const roleNames = () =>
   new Set(
     readdirSync(join(ROOT, ".ai", "agents"), { withFileTypes: true })
@@ -448,6 +457,7 @@ export function validate(state: State) {
       "tags",
     ])
       if (!(key in task)) throw new EngineError(`task ${task.id ?? "?"} missing ${key}`);
+    taskId(task.id);
     if (!STATUSES.has(task.status)) throw new EngineError(`task ${task.id} has invalid status`);
     if (!roles.has(task.owner)) {
       const valid = [...roles].sort().join(", ");

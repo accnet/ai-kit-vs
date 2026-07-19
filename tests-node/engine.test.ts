@@ -42,6 +42,25 @@ test("Node engine persists and transitions an evidence-gated workflow", () => {
   }
 });
 
+test("Node engine rejects task IDs that could escape the workflow directory", () => {
+  const directory = mkdtempSync(join(tmpdir(), "aikit-node-"));
+  try {
+    const path = join(directory, "state", "workflow.json");
+    save(newState("node", "feature"), path);
+    for (const id of ["../../etc/evil", "a/b", "..", "T1\\x", ""]) {
+      assert.throws(
+        () => addTask(path, { id, title: "x", owner: "backend", phase: "build", acceptance: ["works"] }),
+        EngineError,
+        id,
+      );
+    }
+    addTask(path, { id: "T1.retry-2", title: "ok", owner: "backend", phase: "build", acceptance: ["works"] });
+    assert.equal(load<any>(path).tasks[0].id, "T1.retry-2");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("Node plugin contract discovers role-scoped manifests", () => {
   assert.deepEqual(
     new Set(listPlugins("executor").map((plugin) => plugin.id)),
