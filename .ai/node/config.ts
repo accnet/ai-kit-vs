@@ -44,18 +44,64 @@ export function kitArray(key: string, source = readKit()): Set<string> {
 
   const keyLine = lines.find((line) => new RegExp(`^(\\s*)${key}:\\s*$`).test(line));
   if (!keyLine) return new Set();
-  const keyIndent = keyLine.match(/^(\\s*)/)?.[1].length ?? 0;
+  const keyIndent = keyLine.match(/^(\s*)/)?.[1].length ?? 0;
   const values = new Set<string>();
   const start = lines.indexOf(keyLine) + 1;
   for (let index = start; index < lines.length; index++) {
     const line = lines[index];
     if (!line.trim()) continue;
-    const indent = line.match(/^(\\s*)/)?.[1].length ?? 0;
+    const indent = line.match(/^(\s*)/)?.[1].length ?? 0;
     if (indent <= keyIndent) break;
-    const item = line.match(/^\\s*-\\s+(.+?)\\s*(?:#.*)?$/);
+    const item = line.match(/^\s*-\s+(.+?)\s*(?:#.*)?$/);
     if (item) values.add(item[1].trim().replace(/^['"]|['"]$/g, ""));
   }
   return values;
+}
+
+export type MicroTaskPolicy = Readonly<{
+  enabled: boolean;
+  maxFiles: number;
+  requireQa: boolean;
+  requireReview: boolean;
+}>;
+
+function nestedScalar(path: string[], source: string): string | undefined {
+  const lines = source.split(/\r?\n/);
+  let start = 0;
+  let parentIndent = -1;
+  for (const segment of path) {
+    let found: { index: number; indent: number; value: string } | undefined;
+    for (let index = start; index < lines.length; index++) {
+      const line = lines[index];
+      if (!line.trim()) continue;
+      const match = /^(\s*)([^:#]+):\s*(.*?)\s*(?:#.*)?$/.exec(line);
+      if (!match) continue;
+      const indent = match[1].length;
+      if (parentIndent >= 0 && indent <= parentIndent) break;
+      if (match[2].trim() === segment) {
+        found = { index, indent, value: match[3].trim() };
+        break;
+      }
+    }
+    if (!found) return undefined;
+    start = found.index + 1;
+    parentIndent = found.indent;
+    if (segment === path.at(-1)) return found.value || undefined;
+  }
+  return undefined;
+}
+
+const booleanValue = (value: string | undefined, fallback: boolean) =>
+  value === "true" ? true : value === "false" ? false : fallback;
+
+export function microTaskPolicy(source = readKit()): MicroTaskPolicy {
+  const maxFiles = Number(nestedScalar(["workflow", "micro_tasks", "max_files"], source) ?? "2");
+  return {
+    enabled: booleanValue(nestedScalar(["workflow", "micro_tasks", "enabled"], source), false),
+    maxFiles: Number.isSafeInteger(maxFiles) && maxFiles > 0 ? maxFiles : 2,
+    requireQa: booleanValue(nestedScalar(["workflow", "micro_tasks", "require_qa"], source), true),
+    requireReview: booleanValue(nestedScalar(["workflow", "micro_tasks", "require_review"], source), false),
+  };
 }
 
 // A global kit config must not impose its test command on an unrelated

@@ -4,6 +4,15 @@ project:
   stack: []
   source_dirs: []
 
+# Small fixes still use the control plane, but can skip planning and review.
+# Enable per project when this shortened lifecycle is appropriate.
+workflow:
+  micro_tasks:
+    enabled: false
+    max_files: 2
+    require_qa: true
+    require_review: false
+
 # Empty values mean that this project has not declared that check yet.
 verification:
   test_command:

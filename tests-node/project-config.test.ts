@@ -75,3 +75,31 @@ console.log(JSON.stringify({ test: testCommand(), reviewer: configuredPluginId("
   assert.deepEqual(output.allowed, ["codex"]);
   assert.equal(output.claudeAllowed, false);
 });
+
+test("project stack selects only matching domain skills and accepts postgres alias", () => {
+  const project = mkdtempSync(join(tmpdir(), "aikit-project-stack-"));
+  mkdirSync(join(project, ".ai-work"), { recursive: true });
+  writeFileSync(
+    join(project, ".ai-work", "project.yaml"),
+    "project:\n  stack:\n    - postgres\nverification:\n  test_command: node --version\n",
+  );
+  const probe = join(project, "probe.ts");
+  writeFileSync(
+    probe,
+    `import { routeTask } from ${JSON.stringify(join(REPO, ".ai/node/engine.ts"))};
+const route = routeTask({ id: "T1", owner: "backend", tags: ["backend", "database"], files: [] } as any, "${join(project, ".ai-work/workflows/default/state/workflow.json")}");
+console.log(JSON.stringify(route.skills));
+`,
+  );
+  const result = spawnSync(process.execPath, [join(REPO, ".ai/node/node_modules/tsx/dist/cli.mjs"), probe], {
+    cwd: project,
+    env: { ...process.env, AIKIT_ROOT: REPO, AIKIT_PROJECT_ROOT: project, AIKIT_WORK: join(project, ".ai-work") },
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const skills = JSON.parse(result.stdout.trim()) as string[];
+  assert.ok(skills.includes(".ai/skills/database/postgresql/overview.md"));
+  assert.ok(!skills.includes(".ai/skills/database/mysql/overview.md"));
+  assert.ok(!skills.includes(".ai/skills/database/redis/overview.md"));
+  assert.ok(!skills.includes(".ai/skills/backend/laravel/overview.md"));
+});

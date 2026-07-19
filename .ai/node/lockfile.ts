@@ -9,11 +9,12 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { extname, join } from "node:path";
-import { displayPath, now, ROOT } from "./engine.js";
+import { displayPath, now, PROJECT_ROOT, ROOT, WORK } from "./engine.js";
 
 export class LockError extends Error {}
 
 export const LOCK_PATH = join(ROOT, ".ai", "ai-kit.lock.json");
+export const PROJECT_LOCK_PATH = join(PROJECT_ROOT, ".ai-kit.project.lock.json");
 const NODE_PKG = join(ROOT, ".ai", "node", "package.json");
 const RUNTIME = join(ROOT, ".ai", "node");
 const PLUGINS = join(ROOT, ".ai", "plugins");
@@ -61,6 +62,15 @@ export type Lock = {
   security: string | null;
   models: string | null;
   kit: string | null;
+  generated_at?: string;
+};
+
+export type ProjectLock = {
+  version: 1;
+  project_config: string | null;
+  models: string | null;
+  security: string | null;
+  plugins: Record<string, string>;
   generated_at?: string;
 };
 
@@ -126,5 +136,60 @@ export function verifyLock(path = LOCK_PATH): { ok: boolean; drift: LockDrift[] 
       drift.push({ key: section, expected: a ?? null, actual: b ?? null });
     }
   }
+  return { ok: drift.length === 0, drift };
+}
+
+const projectFile = (name: string) =>
+  [join(WORK, name), join(PROJECT_ROOT, ".ai-work", name), join(PROJECT_ROOT, ".ai", name)].find((path) =>
+    existsSync(path),
+  );
+
+function projectPlugins(): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const directory of [join(WORK, "plugins"), join(PROJECT_ROOT, ".ai", "plugins")])
+    Object.assign(
+      result,
+      hashTree(directory, (name) => name.endsWith(".json")),
+    );
+  return result;
+}
+
+export function computeProjectLock(): Omit<ProjectLock, "generated_at"> {
+  return {
+    version: 1,
+    project_config: projectFile("project.yaml") ? hashFile(projectFile("project.yaml")!) : null,
+    models: projectFile("models.yaml") ? hashFile(projectFile("models.yaml")!) : null,
+    security: projectFile("security.yaml") ? hashFile(projectFile("security.yaml")!) : null,
+    plugins: projectPlugins(),
+  };
+}
+
+export function buildProjectLock(): ProjectLock {
+  return { ...computeProjectLock(), generated_at: now() };
+}
+
+export function readProjectLock(path = PROJECT_LOCK_PATH): ProjectLock {
+  if (!existsSync(path))
+    throw new LockError(`project lockfile not found: ${displayPath(path)}; run "ai-kit lock" first`);
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    throw new LockError(`invalid project lockfile JSON: ${displayPath(path)}`);
+  }
+}
+
+export function verifyProjectLock(path = PROJECT_LOCK_PATH): { ok: boolean; drift: LockDrift[] } {
+  const locked = readProjectLock(path);
+  const current = computeProjectLock();
+  const drift: LockDrift[] = [];
+  for (const key of ["project_config", "models", "security"] as const)
+    if (locked[key] !== current[key]) drift.push({ key, expected: locked[key], actual: current[key] });
+  for (const key of new Set([...Object.keys(locked.plugins), ...Object.keys(current.plugins)]))
+    if (locked.plugins[key] !== current.plugins[key])
+      drift.push({
+        key: `plugins.${key}`,
+        expected: locked.plugins[key] ?? null,
+        actual: current.plugins[key] ?? null,
+      });
   return { ok: drift.length === 0, drift };
 }

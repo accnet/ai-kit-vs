@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { kitArray, kitScalar, testCommand } from "../.ai/node/config.js";
+import { kitArray, kitScalar, microTaskPolicy, testCommand } from "../.ai/node/config.js";
 
 const SAMPLE = ["kit:", "  id: ai-kit", "  test_command: npm run test:ci", "project:", "  stack: [node, php]"].join(
   "\n",
@@ -36,6 +36,19 @@ test("kitArray parses project YAML block arrays", () => {
   ].join("\n");
   assert.deepEqual([...kitArray("stack", source)], ["typescript", "postgres"]);
   assert.deepEqual([...kitArray("source_dirs", source)], ["src", "tests"]);
+});
+
+test("microTaskPolicy parses nested project policy and keeps bounded defaults", () => {
+  const source = [
+    "workflow:",
+    "  micro_tasks:",
+    "    enabled: true",
+    "    max_files: 3",
+    "    require_qa: true",
+    "    require_review: false",
+  ].join("\n");
+  assert.deepEqual(microTaskPolicy(source), { enabled: true, maxFiles: 3, requireQa: true, requireReview: false });
+  assert.equal(microTaskPolicy("workflow:\n  micro_tasks:\n    max_files: -1").maxFiles, 2);
 });
 
 test("testCommand reads the shipped kit.yaml", () => {

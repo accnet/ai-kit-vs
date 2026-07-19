@@ -3,7 +3,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   addTask,
+  bindWorkProject,
   createWorkflow,
+  currentWorkflowStatePath,
   displayPath,
   EngineError,
   event,
@@ -24,10 +26,19 @@ import {
   transition,
   validate,
   workspace,
+  workflowStatePath,
+  roleNames,
 } from "./engine.js";
-import { buildLock, LOCK_PATH, verifyLock } from "./lockfile.js";
+import {
+  buildLock,
+  buildProjectLock,
+  LOCK_PATH,
+  PROJECT_LOCK_PATH,
+  verifyLock,
+  verifyProjectLock,
+} from "./lockfile.js";
 import { aiKitHome, initHome } from "./home.js";
-import { kitScalar } from "./config.js";
+import { kitScalar, microTaskPolicy } from "./config.js";
 import { type MemoryKind } from "./memory.js";
 import { runtime } from "./runtime.js";
 
@@ -38,6 +49,217 @@ if (argv[0] === "--state") {
   argv.splice(0, 2);
 }
 const command = argv.shift();
+const explicitState = statePath !== STATE;
+const workflowState = () => (explicitState ? statePath : currentWorkflowStatePath(statePath));
+
+const HELP_TEXT: Record<string, string> = {
+  init: `Usage: ai-kit init --title <title> --workflow <id> [options]
+
+Options:
+  --title <text>       Workflow title (required)
+  --workflow <id>      Workflow type (required)
+  --actor <id>         Event actor
+  --force              Replace existing state after creating a snapshot
+  --state <path>       State file path (global option, before the command)
+  -h, --help           Show this help`,
+  setup: `Usage: ai-kit setup [options]
+
+Options:
+  --planner <plugin>   Planner provider, or off
+  --executor <plugin>  Executor provider, or off
+  --qa <plugin>        QA provider, or local/off
+  --reviewer <plugin>  Reviewer provider, or off
+  --force              Refresh managed bridge files
+  -h, --help           Show this help`,
+  plan: `Usage: ai-kit plan --idea <text> --owner <role> --acceptance <text> [options]
+
+Options:
+  --idea <text>        Feature or project goal (required)
+  --owner <role>       Implementation owner (required)
+  --acceptance <text> Acceptance criterion (repeatable, required)
+  --workflow <id>      Workflow type (default: feature)
+  --phase <id>         Implementation phase (default: build)
+  --files <path>       Declared file path (repeatable)
+  --scope <text>       Scope statement
+  --out-of-scope <text> Exclusions
+  --risks <text>       Risk (repeatable)
+  --assumptions <text> Assumptions
+  --tags <tag>         Task tag (repeatable)
+  --actor <id>         Event actor
+  --force              Replace existing workflow state
+  -h, --help           Show this help`,
+  "workflow-create": `Usage: ai-kit workflow-create <id> --title <title> [options]
+
+Options:
+  --title <text>       Workflow title (required)
+  --workflow <id>      Workflow type (default: feature)
+  --actor <id>         Event actor
+  -h, --help           Show this help`,
+  "add-task": `Usage: ai-kit add-task <task-id> --title <title> --owner <role> --phase <phase> [options]
+
+Options:
+  --title <text>       Task title (required)
+  --owner <role>       Task owner (required)
+  --phase <id>         Task phase (required)
+  --acceptance <text> Acceptance criterion (repeatable)
+  --needs <task-id>    Dependency (repeatable)
+  --files <path>       Declared file path (repeatable)
+  --tags <tag>         Task tag (repeatable)
+  --actor <id>         Event actor
+  -h, --help           Show this help`,
+  "micro-task": `Usage: ai-kit micro-task <task-id> --title <title> --owner <role> --files <path> [options]
+
+Options:
+  --title <text>       Task title (required)
+  --owner <role>       Task owner (required)
+  --workflow-id <id>   Target workflow
+  --phase <id>         Task phase (default: build)
+  --files <path>       Changed file path (repeatable, policy-limited)
+  --acceptance <text> Acceptance criterion (repeatable)
+  --needs <task-id>    Dependency (repeatable)
+  --tags <tag>         Task tag (repeatable)
+  --actor <id>         Event actor
+  -h, --help           Show this help`,
+  transition: `Usage: ai-kit transition <task-id> <action> --actor <id> [options]
+
+Options:
+  --actor <id>         Transition actor (required)
+  --detail <text>      Transition detail
+  --evidence <path>    Evidence path (repeatable)
+  -h, --help           Show this help`,
+  route: `Usage: ai-kit route <task-id>
+
+Returns the role contract, scoped skills, and task context for a task.
+
+Options:
+  -h, --help           Show this help`,
+  context: `Usage: ai-kit context <task-id> [--budget <tokens>]
+
+Options:
+  --budget <tokens>    Context token budget
+  -h, --help           Show this help`,
+  status: `Usage: ai-kit status
+
+Shows workflow status, task counts, and phases.
+
+Options:
+  -h, --help           Show this help`,
+  ready: `Usage: ai-kit ready
+
+Lists runnable tasks.
+
+Options:
+  -h, --help           Show this help`,
+  show: `Usage: ai-kit show
+
+Shows the complete workflow state.
+
+Options:
+  -h, --help           Show this help`,
+  timeline: `Usage: ai-kit timeline
+
+Shows the append-only workflow event history.
+
+Options:
+  -h, --help           Show this help`,
+  lock: `Usage: ai-kit lock
+
+Writes the device lock from the kit root or the project lock from a consuming project.
+
+Options:
+  -h, --help           Show this help`,
+  "verify-lock": `Usage: ai-kit verify-lock
+
+Verifies the device runtime lock and, when present, the project lock.
+
+Options:
+  -h, --help           Show this help`,
+  bind: `Usage: ai-kit bind
+
+Binds an existing external AIKIT_WORK directory to the current project.
+
+Options:
+  -h, --help           Show this help`,
+  memory: `Usage: ai-kit memory <add|list|search> [options]
+
+Options:
+  --kind <kind>        decision, convention, postmortem, or note
+  --title <text>       Memory title
+  --body <text>        Memory body
+  --query <text>       Search query
+  -h, --help           Show this help`,
+  "memory add": `Usage: ai-kit memory add --kind <kind> --title <title> [options]
+
+Options:
+  --kind <kind>        decision, convention, postmortem, or note (required)
+  --title <text>       Memory title (required)
+  --body <text>        Memory body
+  -h, --help           Show this help`,
+  "memory list": `Usage: ai-kit memory list [--kind <kind>]
+
+Options:
+  --kind <kind>        Filter by memory kind
+  -h, --help           Show this help`,
+  "memory search": `Usage: ai-kit memory search --query <text>
+
+Options:
+  --query <text>       Search project memory (required)
+  -h, --help           Show this help`,
+  agent: `Usage: ai-kit agent <claim|context|heartbeat|result|qa|review> [options]
+
+Common options:
+  --workflow-id <id>   Target workflow (required)
+  --client-id <id>     Calling extension or worker (required)
+  -h, --help           Show this help`,
+  roles: `Usage: ai-kit roles
+
+Lists valid task owner roles and provider roles.
+
+Options:
+  -h, --help           Show this help`,
+};
+
+function topHelp(): string {
+  const commands = [
+    "setup",
+    "init",
+    "plan",
+    "workflow-create",
+    "add-task",
+    "micro-task",
+    "ready",
+    "status",
+    "show",
+    "timeline",
+    "route",
+    "context",
+    "agent",
+    "memory",
+    "lock",
+    "verify-lock",
+    "bind",
+    "validate",
+    "providers",
+    "provider",
+    "roles",
+    "version",
+  ];
+  return `Usage: ai-kit <command> [options]\n\nCommands:\n${commands.map((item) => `  ${item}`).join("\n")}\n\nGlobal options:\n  --state <path>       Use an explicit workflow state file\n  -h, --help           Show help for a command`;
+}
+
+function printHelp(requested?: string): never {
+  const key = requested === "memory" && argv[0] && !argv[0].startsWith("-") ? `memory ${argv[0]}` : requested;
+  const text =
+    (key && HELP_TEXT[key]) ||
+    (requested ? `Usage: ai-kit ${requested} [options]\n\nOptions:\n  -h, --help           Show this help` : topHelp());
+  console.log(text);
+  process.exit(0);
+}
+
+if (command === "--help" || command === "-h") printHelp();
+if (command === "help") printHelp(argv[0]);
+if (argv.includes("--help") || argv.includes("-h")) printHelp(command);
+
 const values = new Map<string, string[]>();
 for (let index = 0; index < argv.length; index++) {
   const item = argv[index];
@@ -134,6 +356,11 @@ const handlers: Record<string, () => unknown> = {
       writeFileSync(destination, readFileSync(join(ROOT, ".ai", "templates", name)));
       initializedProjectConfigs.push(displayPath(destination));
     }
+    const memoryReadme = join(PROJECT_ROOT, ".ai-memory", "README.md");
+    if (!existsSync(memoryReadme)) {
+      mkdirSync(join(PROJECT_ROOT, ".ai-memory"), { recursive: true });
+      writeFileSync(memoryReadme, readFileSync(join(ROOT, ".ai", "templates", "memory", "README.md")));
+    }
     const providerRoles = ["planner", "executor", "qa", "reviewer"] as const;
     const selectedProviderRoles = providerRoles.filter((role) => values.has(role));
     if (selectedProviderRoles.length) {
@@ -176,13 +403,14 @@ const handlers: Record<string, () => unknown> = {
     return { project: PROJECT_ROOT, home: ROOT, work: WORK, copied, initializedProjectConfigs };
   },
   plan: () => {
-    if (existsSync(statePath) && !flag("force"))
-      throw new EngineError(`state already exists: ${statePath}; use --force to replace`);
+    const targetState = workflowState();
+    if (existsSync(targetState) && !flag("force"))
+      throw new EngineError(`state already exists: ${targetState}; use --force to replace`);
     const idea = one("idea", true)!,
       workflow = one("workflow") ?? "feature",
       acceptance = many("acceptance");
     if (!acceptance.length) throw new EngineError("--acceptance is required");
-    const root = workspace(statePath);
+    const root = workspace(targetState);
     const planFiles = ["roadmap/roadmap.md", "plan/plan.md", "tasks/tasks.md"].map((name) =>
       displayPath(join(root, name)),
     );
@@ -236,10 +464,10 @@ const handlers: Record<string, () => unknown> = {
       `${root}/tasks/tasks.md`,
       `# Tasks\n\n- [ ] T1 Confirm scope and plan | owner: planner | phase: plan\n- [ ] T2 ${idea} | owner: ${one("owner", true)} | needs: T1 | phase: build\n  - Accept: ${acceptance.join("\n  - Accept: ")}\n`,
     );
-    event(state, statePath, "plan", null, one("actor") ?? "planner", null, null, "idea converted to draft plan");
-    save(state, statePath);
+    event(state, targetState, "plan", null, one("actor") ?? "planner", null, null, "idea converted to draft plan");
+    save(state, targetState);
     return {
-      state: statePath,
+      state: targetState,
       workspace: root,
       tasks: ["T1", "T2"],
       assumptions: one("assumptions") ?? "none recorded",
@@ -248,14 +476,15 @@ const handlers: Record<string, () => unknown> = {
   "workflow-create": () =>
     createWorkflow(argv[0], one("title", true)!, one("workflow") ?? "feature", one("actor") ?? "planner"),
   "sync-docs": () => {
-    const state = load<any>(statePath);
+    const path = workflowState();
+    const state = load<any>(path);
     validate(state);
-    syncWorkflowDocs(state, statePath);
-    return { state: statePath, workspace: workspace(statePath) };
+    syncWorkflowDocs(state, path);
+    return { state: path, workspace: workspace(path) };
   },
   workflows: () => loadRegistry().workflows,
   "add-task": () =>
-    addTask(statePath, {
+    addTask(workflowState(), {
       id: argv[0],
       title: one("title", true),
       owner: one("owner", true),
@@ -266,55 +495,79 @@ const handlers: Record<string, () => unknown> = {
       tags: many("tags"),
       actor: one("actor") ?? "planner",
     }),
+  "micro-task": () => {
+    const policy = microTaskPolicy();
+    if (!policy.enabled) throw new EngineError("micro-tasks are disabled in project policy");
+    const files = many("files");
+    if (!files.length) throw new EngineError("micro-task requires at least one --files path");
+    if (files.length > policy.maxFiles)
+      throw new EngineError(`micro-task allows at most ${policy.maxFiles} file paths`);
+    const workflowId = one("workflow-id");
+    const task = addTask(workflowId ? workflowStatePath(workflowId) : workflowState(), {
+      id: argv[0],
+      title: one("title", true),
+      owner: one("owner", true),
+      phase: one("phase") ?? "build",
+      acceptance: many("acceptance"),
+      needs: many("needs"),
+      files,
+      tags: [...new Set([...many("tags"), "micro"])],
+      actor: one("actor") ?? "micro-task",
+    });
+    return { policy, task };
+  },
   ready: () => {
-    const state = load<any>(statePath);
+    const state = load<any>(workflowState());
     const tasks = taskMap(state);
     return state.tasks.filter((task: any) => runnable(task, tasks));
   },
-  transition: () => transition(statePath, argv[0], argv[1], one("actor", true)!, one("detail") ?? "", many("evidence")),
+  transition: () =>
+    transition(workflowState(), argv[0], argv[1], one("actor", true)!, one("detail") ?? "", many("evidence")),
   validate: () => {
-    validate(load<any>(statePath));
+    validate(load<any>(workflowState()));
     return { valid: true };
   },
   show: () => {
-    const state = load<any>(statePath);
+    const state = load<any>(workflowState());
     syncPhases(state);
     return state;
   },
   status: () => {
-    const state = load<any>(statePath);
+    const state = load<any>(workflowState());
     syncPhases(state);
     const counts: Record<string, number> = {};
     for (const task of state.tasks) counts[task.status] = (counts[task.status] ?? 0) + 1;
     return { title: state.title, revision: state.revision, counts, phases: state.phases };
   },
   timeline: () => {
-    const state = load<any>(statePath);
+    const state = load<any>(workflowState());
     validate(state);
     return state.events;
   },
   blocked: () => {
-    const state = load<any>(statePath);
+    const state = load<any>(workflowState());
     return state.tasks
       .filter((task: any) => task.status === "blocked")
       .map((task: any) => ({ id: task.id, title: task.title, reason: task.blocked_reason }));
   },
   graph: () => {
-    const state = load<any>(statePath);
+    const state = load<any>(workflowState());
     const dot = (value: string) => String(value).replaceAll("\\", "\\\\").replaceAll('"', '\\"');
     return `digraph workflow {\n${state.tasks.flatMap((task: any) => [`  "${dot(task.id)}" [label="${dot(`${task.id}: ${task.title}`)}"];`, ...task.needs.map((need: string) => `  "${dot(need)}" -> "${dot(task.id)}";`)]).join("\n")}\n}`;
   },
   route: () => {
-    const state = load<any>(statePath),
+    const path = workflowState();
+    const state = load<any>(path),
       task = taskMap(state).get(argv[0]);
     if (!task) throw new EngineError(`unknown task: ${argv[0]}`);
-    return routeTask(task, statePath);
+    return routeTask(task, path);
   },
   context: () => {
-    const state = load<any>(statePath),
+    const path = workflowState();
+    const state = load<any>(path),
       task = taskMap(state).get(argv[0]);
     if (!task) throw new EngineError(`unknown task: ${argv[0]}`);
-    const route = routeTask(task, statePath);
+    const route = routeTask(task, path);
     const budget = one("budget") ? Number(one("budget")) : undefined;
     return {
       task: task.id,
@@ -364,10 +617,11 @@ const handlers: Record<string, () => unknown> = {
     );
   },
   bundle: () => {
-    const state = load<any>(statePath),
+    const path = workflowState();
+    const state = load<any>(path),
       task = taskMap(state).get(argv[0]);
     if (!task) throw new EngineError(`unknown task: ${argv[0]}`);
-    return runtime.context.build(task, statePath, one("budget") ? Number(one("budget")) : undefined);
+    return runtime.context.build(task, path, one("budget") ? Number(one("budget")) : undefined);
   },
   onboard: () => {
     const stacks: string[] = [],
@@ -415,16 +669,25 @@ const handlers: Record<string, () => unknown> = {
     argv[0]
       ? runtime.capabilities.resolveCapability(argv[0])
       : runtime.capabilities.listCapabilities(one("kind") as any),
+  roles: () => ({ task_owners: [...roleNames()].sort(), provider_roles: ["planner", "executor", "qa", "reviewer"] }),
   lock: () => {
+    if (PROJECT_ROOT !== ROOT) {
+      const lock = buildProjectLock();
+      writeFileSync(PROJECT_LOCK_PATH, `${JSON.stringify(lock, null, 2)}\n`);
+      return lock;
+    }
     const lock = buildLock();
     writeFileSync(LOCK_PATH, `${JSON.stringify(lock, null, 2)}\n`);
     return lock;
   },
   "verify-lock": () => {
-    const result = verifyLock();
+    const device = verifyLock();
+    const project = existsSync(PROJECT_LOCK_PATH) ? verifyProjectLock() : { ok: true, drift: [] };
+    const result = { ok: device.ok && project.ok, drift: [...device.drift, ...project.drift] };
     if (!result.ok) process.exitCode = 1;
     return result;
   },
+  bind: () => bindWorkProject(),
   home: () => (flag("init") ? initHome() : { home: aiKitHome() }),
   memory: () => {
     const sub = argv[0];
@@ -452,8 +715,8 @@ const handlers: Record<string, () => unknown> = {
   version: () => ({
     // Kit identity from .ai/kit.yaml, which is always installed (a consuming
     // project may have no root package.json).
-    name: kitScalar("id") ?? "ai-kit",
-    version: kitScalar("version") ?? "0.0.0",
+    name: kitScalar("id", readFileSync(join(ROOT, ".ai", "kit.yaml"), "utf8")) ?? "ai-kit",
+    version: kitScalar("version", readFileSync(join(ROOT, ".ai", "kit.yaml"), "utf8")) ?? "0.0.0",
   }),
 };
 

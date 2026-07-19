@@ -114,6 +114,7 @@ test("global ai-kit setup bootstraps a new project without a local runtime", () 
     ".ai-work/workflows/default/tasks/tasks.md",
     ".ai-work/project.yaml",
     ".ai-work/models.yaml",
+    ".ai-memory/README.md",
   ])
     assert.ok(existsSync(join(project, file)), `missing ${file}`);
   assert.equal(existsSync(join(project, ".ai")), false);

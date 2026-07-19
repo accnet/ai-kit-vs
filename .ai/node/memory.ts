@@ -1,15 +1,17 @@
-// Memory Engine — durable, human-readable project memory kept in `.ai/memory/`,
+// Memory Engine — durable, human-readable project memory kept in `.ai-memory/`,
 // separate from disposable session state in `.ai-work/`. Records decisions,
 // conventions, and postmortems as markdown files with a small frontmatter block,
 // and can list or search them at runtime.
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { displayPath, now, ROOT } from "./engine.js";
+import { displayPath, now, PROJECT_ROOT } from "./engine.js";
 
 export class MemoryError extends Error {}
 
-export const MEMORY_DIR = join(ROOT, ".ai", "memory");
+// Shared kit memory is installer knowledge and must never enter a project's
+// context bundle. Every project gets an independent memory namespace.
+export const MEMORY_DIR = join(PROJECT_ROOT, ".ai-memory");
 export const MEMORY_KINDS = ["decision", "convention", "postmortem", "note"] as const;
 export type MemoryKind = (typeof MEMORY_KINDS)[number];
 

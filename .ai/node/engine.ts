@@ -56,6 +56,9 @@ const CORE_BY_ROLE: Record<string, string[]> = {
   document: ["documentation-maintenance", "architecture-decisions"],
   release: ["release-management", "deployment-infra", "github-actions-ci"],
 };
+const STACK_ALIASES: Record<string, string[]> = {
+  postgresql: ["postgres", "postgresql"],
+};
 const LOCK_TTL_MS = Number(process.env.AIKIT_LOCK_TTL_SECONDS ?? "300") * 1000;
 const STATUSES = new Set([
   "todo",
@@ -82,6 +85,7 @@ const TRANSITIONS: Record<string, [Set<TaskStatus>, TaskStatus]> = {
   "qa-pass": [new Set(["implementation-complete"]), "qa-passed"],
   "review-approve": [new Set(["qa-passed"]), "review-approved"],
   close: [new Set(["review-approved"]), "done"],
+  "micro-close": [new Set(["implementation-complete", "qa-passed"]), "done"],
   replace: [new Set(["qa-passed"]), "replaced"],
   block: [new Set(["todo", "in-progress", "implementation-complete", "qa-passed", "review-approved"]), "blocked"],
   unblock: [new Set(["blocked"]), "todo"],
@@ -139,10 +143,62 @@ export type State = {
 };
 export const stamp = (date: Date) => date.toISOString().replace(/\.\d{3}Z$/, "Z");
 export const now = () => stamp(new Date());
+export function assertWorkProject() {
+  if (!existsSync(CURRENT)) return;
+  try {
+    const current = JSON.parse(readFileSync(CURRENT, "utf8")) as { project_root?: string };
+    if (current.project_root && resolve(current.project_root) !== PROJECT_ROOT)
+      throw new EngineError(
+        `AI-Kit work state belongs to ${current.project_root}, not ${PROJECT_ROOT}; use a project-specific AIKIT_WORK`,
+      );
+  } catch (error) {
+    if (error instanceof EngineError) throw error;
+    throw new EngineError(`invalid AI-Kit work identity: ${CURRENT}`);
+  }
+}
+export function currentWorkflowStatePath(fallback = STATE) {
+  if (!existsSync(CURRENT)) return fallback;
+  try {
+    const current = JSON.parse(readFileSync(CURRENT, "utf8")) as { workflow_state?: string };
+    if (!current.workflow_state) return fallback;
+    if (isAbsolute(current.workflow_state)) return resolve(current.workflow_state);
+    const candidates = [
+      join(PROJECT_ROOT, current.workflow_state),
+      join(WORK, current.workflow_state),
+      join(ROOT, current.workflow_state),
+    ];
+    return candidates.find((path) => existsSync(path)) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+export function bindWorkProject() {
+  if (!existsSync(CURRENT)) return { bound: false, reason: "no current workflow" };
+  assertWorkProject();
+  const current = JSON.parse(readFileSync(CURRENT, "utf8")) as Record<string, unknown>;
+  if (current.project_root === PROJECT_ROOT) return { bound: true, current };
+  const payload = { ...current, project_root: PROJECT_ROOT };
+  const lock = `${CURRENT}.lock`;
+  acquire(lock);
+  try {
+    mkdirSync(dirname(CURRENT), { recursive: true });
+    const temporary = `${CURRENT}.tmp`;
+    writeFileSync(temporary, `${JSON.stringify(payload, null, 2)}\n`);
+    renameSync(temporary, CURRENT);
+  } finally {
+    release(lock);
+  }
+  return { bound: true, current: payload };
+}
 export const resolveProjectPath = (path: string) => {
   if (isAbsolute(path)) return path;
   const projectPath = join(PROJECT_ROOT, path);
-  return existsSync(projectPath) ? projectPath : join(ROOT, path);
+  if (existsSync(projectPath)) return projectPath;
+  const shared =
+    /^(?:\.ai\/(?:agents|capabilities|context|engine|modules|skills|workflows)(?:\/|$)|\.ai\/(?:registry|rules)\.yaml$)/.test(
+      path.replaceAll("\\", "/"),
+    );
+  return shared ? join(ROOT, path) : projectPath;
 };
 export const displayPath = (path: string) => {
   for (const root of [PROJECT_ROOT, ROOT]) {
@@ -197,7 +253,8 @@ export function routeTask(task: Task, statePath: string) {
       .filter((item) => item.isDirectory())
       .sort((a, b) => a.name.localeCompare(b.name))) {
       const overview = join(directory, entry.name, "overview.md");
-      if (existsSync(overview) && stack.has(entry.name)) skills.push(displayPath(overview));
+      const stackNames = STACK_ALIASES[entry.name] ?? [entry.name];
+      if (existsSync(overview) && stackNames.some((name) => stack.has(name))) skills.push(displayPath(overview));
     }
   }
   for (const name of CORE_BY_ROLE[task.owner] ?? ["skill-router"]) {
@@ -221,6 +278,7 @@ export function routeTask(task: Task, statePath: string) {
 }
 
 export function load<T = State>(path: string): T {
+  assertWorkProject();
   if (!existsSync(path)) throw new EngineError(`state not found: ${path}; run init first`);
   try {
     return JSON.parse(readFileSync(path, "utf8"));
@@ -310,6 +368,7 @@ function writeCurrent(state: State, path: string) {
   const lock = `${CURRENT}.lock`,
     payload = {
       version: 1,
+      project_root: PROJECT_ROOT,
       workflow_state: displayPath(path),
       title: state.title,
       workflow: state.workflow,
@@ -327,6 +386,7 @@ function writeCurrent(state: State, path: string) {
   }
 }
 export function save(state: State, path: string, expected?: number) {
+  assertWorkProject();
   saveJson(state, path, expected);
   writeCurrent(state, path);
   syncWorkflowDocs(state, path);
@@ -389,7 +449,13 @@ export function validate(state: State) {
     ])
       if (!(key in task)) throw new EngineError(`task ${task.id ?? "?"} missing ${key}`);
     if (!STATUSES.has(task.status)) throw new EngineError(`task ${task.id} has invalid status`);
-    if (!roles.has(task.owner)) throw new EngineError(`task ${task.id} has unknown owner: ${task.owner}`);
+    if (!roles.has(task.owner)) {
+      const valid = [...roles].sort().join(", ");
+      throw new EngineError(
+        `task ${task.id} has unknown owner: ${task.owner}; valid task owners: ${valid || "none"}. ` +
+          "Task owners are agent roles under .ai/agents; provider roles such as executor belong in models.yaml.",
+      );
+    }
     if (!task.phase?.trim() || !task.acceptance?.length)
       throw new EngineError(`task ${task.id} needs phase and acceptance criteria`);
     for (const dependency of task.needs)

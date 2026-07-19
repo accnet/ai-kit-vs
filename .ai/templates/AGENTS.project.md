@@ -1,7 +1,7 @@
 # AGENTS.md
 
 This project is orchestrated by **AI-Kit**. All processing logic lives in AI-Kit;
-this repository only holds project **data** under `.ai-work/`. Do not run ad-hoc AI
+this repository only holds project **data** under `.ai-work/` and `.ai-memory/`. Do not run ad-hoc AI
 workflows or call another agent directly — everything goes through the AI-Kit CLI.
 
 ## Where the data is (`.ai-work/`)
@@ -21,6 +21,10 @@ Top level:
 - `registry.json` — the list of registered workflows.
 - `run/workers/` — background provider-worker records.
 
+Project-specific durable knowledge belongs in `.ai-memory/`. It is isolated from
+the shared runtime memory under `~/ai-kit/.ai/memory/` and is loaded only for
+this project.
+
 ## How to read your context
 
 1. Read the assignment JSON whose path you are given.
@@ -33,16 +37,19 @@ Top level:
 
 Run from the project root; state stays in `.ai-work/`:
 
-- `npm run ai-kit -- status` — workflow status and phases.
-- `npm run ai-kit -- ready` — tasks ready to work on.
-- `npm run ai-kit -- show` — full state.
-- `npm run ai-kit -- route <task-id>` — role contract, skills, and context for a task.
+- `ai-kit --help` or `ai-kit <command> --help` — inspect the CLI without running the command.
+- `ai-kit roles` — list valid task owners and provider roles.
+- `ai-kit status` — workflow status and phases.
+- `ai-kit bind` — bind an existing external `.ai-work` directory to this project.
+- `ai-kit ready` — tasks ready to work on.
+- `ai-kit show` — full state.
+- `ai-kit route <task-id>` — role contract, skills, and context for a task.
 - `ai-kit agent claim --workflow-id <id> --client-id <extension-id>` — claim the next task through the State Manager.
 - `ai-kit agent context --workflow-id <id> --task-id <task> --client-id <client> --attempt-id <attempt>` — load the claimed context.
 - `ai-kit agent result --workflow-id <id> --task-id <task> --client-id <client> --attempt-id <attempt> --status pass --summary "..."` — submit implementation evidence.
-- `npm run ai-kit -- timeline` — event history.
-- `npm run ai-kit:worker -- start --workflow-id <id> --role executor` — run a provider worker.
-- `npm run ai-kit:gate -- <workflow-id> --once` — run QA and close tasks after reviewer approval.
+- `ai-kit timeline` — event history.
+- `ai-kit-worker start --workflow-id <id> --role executor` — run a provider worker.
+- `ai-kit-gate <workflow-id> --once` — run QA and close tasks after reviewer approval.
 
 ## Natural-Language Setup Trigger
 
@@ -70,9 +77,12 @@ Use the following intent map instead of asking the user to run a batch command:
 | "test this", "verify the change", "run QA"   | Read the QA contract, run the declared focused and full verification, and record evidence in the task workflow.                      |
 | "review this", "check the changes"           | Read the reviewer contract, inspect the diff and evidence independently, and report findings without approving your own work.        |
 | "show progress", "what is the status"        | Run `ai-kit status`, `ai-kit ready`, and `ai-kit timeline`; do not start implementation.                                             |
+| "small fix", "minor bug", "bounded change"   | If `workflow.micro_tasks.enabled` is true, create a bounded `ai-kit micro-task`; otherwise use the normal task flow.                 |
 
 For every trigger, load only the routed context, use the smallest applicable
-CLI command, and preserve existing `.ai-work` state. Never invoke an unscoped
+CLI command, and preserve existing `.ai-work` state. Status and read commands
+follow the active workflow pointer; use `--state <path>` when an explicit
+workflow is required. Never invoke an unscoped
 batch or bypass the State Manager with hand-edited lifecycle JSON.
 
 ## Agent Client Mode
@@ -83,6 +93,26 @@ send periodic heartbeats for long work, and submit exactly one result through
 `ai-kit agent result`. They may edit project files, but must never edit
 `.ai-work/workflows/` directly. QA, review, and release gates remain owned by
 independent AI-Kit clients.
+
+For a small, bounded fix, a project may enable the shortened micro-task policy
+in `.ai-work/project.yaml`. It still creates a tracked task and requires an
+independent QA gate, but it can skip a separate plan and reviewer:
+
+```bash
+ai-kit micro-task T1 \
+  --title "Fix the small defect" \
+  --owner backend \
+  --workflow-id default \
+  --files src/example.ts \
+  --acceptance "focused test passes"
+ai-kit agent claim --workflow-id default --client-id codex-extension
+ai-kit-gate default --once --verify
+```
+
+The policy is disabled by default and limits the number of declared files.
+Natural-language discussion, brainstorming, and read-only status checks do not
+need any CLI call; code changes should use either the normal workflow or this
+explicit micro-task path.
 
 ## Rules
 

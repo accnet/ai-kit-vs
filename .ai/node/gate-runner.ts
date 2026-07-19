@@ -4,7 +4,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import * as board from "./board.js";
 import * as engine from "./engine.js";
-import { testCommand } from "./config.js";
+import { microTaskPolicy, testCommand } from "./config.js";
 
 export type GateRoles = { qa: boolean; review: boolean; release: boolean };
 export const ALL_ROLES: GateRoles = { qa: true, review: true, release: true };
@@ -32,11 +32,16 @@ export function runGateCycle(
   reverify = false,
 ): GateAction[] {
   const acted: GateAction[] = [];
+  const policy = microTaskPolicy();
+  const isMicro = (id: string) => {
+    const task = taskById(workflowId, id);
+    return policy.enabled && task?.tags.includes("micro");
+  };
   const byOther = (id: string) => taskById(workflowId, id)?.implementation_client !== client;
 
   if (roles.qa)
     for (const item of board.pendingReview(workflowId).awaiting_qa)
-      if (byOther(item.id) && (!reverify || verify()))
+      if (byOther(item.id) && (!isMicro(item.id) || policy.requireQa) && (!reverify || verify()))
         try {
           board.submitQa(
             workflowId,
@@ -54,9 +59,22 @@ export function runGateCycle(
 
   if (roles.release)
     for (const task of engine.load<engine.State>(engine.workflowStatePath(workflowId)).tasks)
-      if (task.status === "review-approved")
+      if (
+        task.status === "review-approved" ||
+        (isMicro(task.id) &&
+          ((task.status === "qa-passed" && !policy.requireReview) ||
+            (task.status === "implementation-complete" && !policy.requireQa && !policy.requireReview)))
+      )
         try {
-          board.close(workflowId, task.id, client);
+          if (task.status === "review-approved") board.close(workflowId, task.id, client);
+          else
+            engine.transition(
+              engine.workflowStatePath(workflowId),
+              task.id,
+              "micro-close",
+              client,
+              "closed by micro-task policy",
+            );
           acted.push({ task: task.id, action: "close" });
         } catch {}
 

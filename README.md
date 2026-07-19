@@ -10,6 +10,15 @@ After installation, new projects are initialized with the global command:
 ai-kit setup
 ```
 
+Every CLI command supports `--help` and `-h`. Help is handled before command
+validation and has no state, workflow, lockfile, or project-file side effects;
+this keeps AI-Kit discoverable by Cline and other CLI-integrating agents.
+
+Task owners and provider roles are separate. Use `ai-kit roles` to list valid
+task owners. For example, `backend` or `architect` can own a task, while
+`executor: codex` in `.ai-work/models.yaml` selects the provider that executes
+it. Provider names are not valid task owners.
+
 ## Requirements
 
 - Node.js 22 or newer
@@ -87,6 +96,11 @@ project/
 │       ├── roadmap/roadmap.md
 │       ├── state/workflow.json
 │       └── tasks/tasks.md
+├── .ai-memory/
+│   ├── decisions/
+│   ├── conventions/
+│   ├── postmortems/
+│   └── notes/
 ├── AGENTS.md
 ├── CLAUDE.md
 ├── GEMINI.md
@@ -96,6 +110,10 @@ project/
 ├── .github/copilot-instructions.md
 └── .vscode/
 ```
+
+For an existing external work directory, run `ai-kit bind` once from the
+project root. AI-Kit records the project identity in the current-workflow
+pointer and rejects reuse of that work directory by another project.
 
 The project gets no `.ai/node` runtime and no root `node_modules`. The runtime
 and templates remain in `~/ai-kit`. `ai-kit setup --force` refreshes managed
@@ -115,6 +133,43 @@ launches a provider CLI and reports an actionable configuration error if invoked
 Project plugins and security restrictions use `.ai-work/plugins/` and
 `.ai-work/security.yaml`. A project security file can restrict the global
 allowlist but cannot expand it.
+
+Durable project knowledge is kept separately in `.ai-memory/`. The runtime never
+uses the shared `~/ai-kit/.ai/memory/` as a project memory fallback. Run
+`ai-kit memory add`, `list`, or `search` from the project root to manage it.
+
+Run `ai-kit lock` from a consuming project to write `.ai-kit.project.lock.json`;
+`ai-kit verify-lock` then checks both the global runtime lock and project-local
+configuration/plugins.
+
+### Small fixes without a full planning cycle
+
+Discussion, brainstorming, and read-only inspection can happen directly in an
+editor. For a small code change, keep lifecycle tracking in AI-Kit by enabling
+the project-local micro-task policy:
+
+```yaml
+workflow:
+  micro_tasks:
+    enabled: true
+    max_files: 2
+    require_qa: true
+    require_review: false
+```
+
+Then create the bounded task and let the extension use the normal agent API:
+
+```bash
+ai-kit micro-task T1 --title "Fix the small defect" --owner backend --workflow-id default \
+  --files src/example.ts --acceptance "focused test passes"
+ai-kit agent claim --workflow-id default --client-id codex-extension
+ai-kit-gate default --once --verify
+```
+
+The task is still claimed and records implementation and QA evidence. With
+`require_review: false`, the independent gate closes it after QA; no provider
+CLI is required. The policy is project configuration, not a global hard-coded
+AI-Kit behavior.
 
 ## Natural-Language Setup
 

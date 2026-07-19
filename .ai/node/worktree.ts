@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 
 export class GitError extends Error {}
 const run = (args: string[], cwd: string, check = true) => {
@@ -10,8 +11,12 @@ const run = (args: string[], cwd: string, check = true) => {
   return `${result.stdout || ""}`.trim();
 };
 export const branch = (task: string) => `agent/${task}`;
-const worktreePath = (task: string, repo: string) =>
-  join(process.env.AIKIT_WT_DIR ?? join(dirname(repo), `${repo.split(/[\\/]/).at(-1)}-wt`), task);
+const defaultWorktreeRoot = (repo: string) =>
+  join(
+    dirname(repo),
+    `${repo.split(/[\\/]/).at(-1)}-wt-${createHash("sha256").update(resolve(repo)).digest("hex").slice(0, 12)}`,
+  );
+const worktreePath = (task: string, repo: string) => join(process.env.AIKIT_WT_DIR ?? defaultWorktreeRoot(repo), task);
 export function createWorktree(task: string, repo: string, base = "HEAD") {
   const path = worktreePath(task, repo),
     name = branch(task),

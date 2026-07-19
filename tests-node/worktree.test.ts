@@ -49,3 +49,28 @@ test("Node worktrees preserve dependency merge order and dirty work", () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("default worktree roots are namespaced by repository path", () => {
+  const root = mkdtempSync(join(tmpdir(), "aikit-node-worktree-isolation-"));
+  const first = join(root, "one", "project");
+  const second = join(root, "two", "project");
+  const previous = process.env.AIKIT_WT_DIR;
+  delete process.env.AIKIT_WT_DIR;
+  try {
+    for (const repo of [first, second]) {
+      git(["init", "-q", "-b", "main", repo], root);
+      git(["config", "user.email", "test@example.com"], repo);
+      git(["config", "user.name", "test"], repo);
+      writeFileSync(join(repo, "README.md"), "base\n");
+      git(["add", "."], repo);
+      git(["commit", "-qm", "base"], repo);
+    }
+    const firstWorktree = createWorktree("T1", first);
+    const secondWorktree = createWorktree("T1", second);
+    assert.notEqual(firstWorktree.worktree, secondWorktree.worktree);
+  } finally {
+    if (previous === undefined) delete process.env.AIKIT_WT_DIR;
+    else process.env.AIKIT_WT_DIR = previous;
+    rmSync(root, { recursive: true, force: true });
+  }
+});

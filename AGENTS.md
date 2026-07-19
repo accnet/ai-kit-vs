@@ -217,7 +217,7 @@ only to the appropriate committed documentation, never by treating
 - Use project-local references under `.ai/`; do not depend on host-specific
   agent skills to define repository behavior.
 - Do not claim an action, test, or runtime capability exists without evidence.
-- Record architecture decisions and durable lessons in `.ai/memory/`; keep
+- Record architecture decisions and durable lessons in `.ai-memory/`; keep
   task-specific evidence and reports in `.ai-work/`.
 - Escalate unclear requirements, conflicting contracts, security-sensitive
   scope, or missing authority before taking irreversible action.
@@ -238,28 +238,31 @@ configuration. CI runs the same portable checks on GitHub.
 
 ## Runtime Capabilities (1.0)
 
-The control plane exposes these commands via `npm run ai-kit -- <command>`
-(state commands accept `--state <path>`):
+The control plane exposes these commands through the global `ai-kit` launcher
+when used from a consuming project (state commands accept `--state <path>`):
 
-- Workflow: `init`, `plan`, `workflow-create`, `workflows`, `add-task`, `ready`,
+- Workflow: `init`, `plan`, `workflow-create`, `workflows`, `add-task`, `bind`, `ready`,
   `transition`, `validate`, `show`, `status`, `timeline`, `blocked`, `graph`,
   `route`, `onboard`.
 - Capabilities: `capabilities [id] [--kind knowledge|framework|language|tool]`
   lists or resolves capability manifests over Agents and Skills.
-- Reproducibility: `lock` writes `.ai/ai-kit.lock.json`; `verify-lock` reports
-  drift in runtime versions, runtime source, plugin/capability/config hashes. It pins process
-  and configuration, not model output.
+- Reproducibility: `lock` writes the device lock in `.ai/ai-kit.lock.json` from
+  the kit root, or `.ai-kit.project.lock.json` from a consuming project;
+  `verify-lock` checks both when the project lock exists. It pins process and
+  configuration, not model output.
 - Global home: `home [--init]` manages the shared `~/ai-kit/` runtime
   (`AIKIT_HOME` override). Project plugins shadow global ones.
+- CLI help: every command accepts `--help` and `-h`; help exits before validation
+  or side effects.
 - Providers run through the CLI provider adapter
   (`.ai/engine/provider-adapter.md`), and only executables allowlisted in
   `.ai/security.yaml` may launch.
 
-Automation entry points (separate npm scripts):
+Automation entry points (global launchers):
 
-- `npm run ai-kit:worker -- <start|stop|list|status>` manages provider workers
+- `ai-kit-worker <start|stop|list|status>` manages provider workers
   (`start --workflow-id ID [--role executor|qa|reviewer|planner] [--plugin ID]`).
-- `npm run ai-kit:gate -- <workflow-id> [--once] [--verify]` runs independent QA
+- `ai-kit-gate <workflow-id> [--once] [--verify]` runs independent QA
   and closes tasks only after a reviewer plugin has approved them.
 
 The VS Code extension in `extension/` is a thin UI client that shells out to
