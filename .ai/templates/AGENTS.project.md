@@ -106,7 +106,7 @@ ai-kit micro-task T1 \
   --files src/example.ts \
   --acceptance "focused test passes"
 ai-kit agent claim --workflow-id default --client-id codex-extension
-ai-kit-gate default --once --verify
+ai-kit-gate default --once
 ```
 
 The policy is disabled by default and limits the number of declared files.

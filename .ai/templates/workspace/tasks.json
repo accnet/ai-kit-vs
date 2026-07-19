@@ -37,7 +37,7 @@
       "label": "AI-Kit: Run configured QA",
       "type": "shell",
       "command": "ai-kit-gate",
-      "args": ["${input:workflowId}", "--once", "--verify"],
+      "args": ["${input:workflowId}", "--once"],
       "options": { "cwd": "${workspaceFolder}" },
       "problemMatcher": []
     }

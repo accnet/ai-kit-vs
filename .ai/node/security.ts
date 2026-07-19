@@ -20,6 +20,7 @@ const PROJECT_CONFIGS = [
 ];
 export const DEFAULT_ALLOWED = [
   "node",
+  "npm",
   "npx",
   "claude",
   "codex",
@@ -31,6 +32,56 @@ export const DEFAULT_ALLOWED = [
   "python",
   "python3",
 ];
+
+// Parse the project verification command into argv without invoking a shell.
+// Quotes are supported for arguments such as `node -e "..."`; shell operators
+// remain ordinary argv tokens and can never start a second command.
+export function parseCommand(command: string): string[] {
+  const args: string[] = [];
+  let current = "";
+  let quote: "'" | '"' | null = null;
+  let escaped = false;
+  let started = false;
+  for (const char of command.trim()) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      started = true;
+      continue;
+    }
+    if (char === "\\" && quote !== "'") {
+      escaped = true;
+      started = true;
+      continue;
+    }
+    if (quote) {
+      if (char === quote) quote = null;
+      else current += char;
+      started = true;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+      started = true;
+      continue;
+    }
+    if (/\s/.test(char)) {
+      if (started) {
+        args.push(current);
+        current = "";
+        started = false;
+      }
+      continue;
+    }
+    current += char;
+    started = true;
+  }
+  if (escaped) throw new SecurityError("verification command ends with an escape character");
+  if (quote) throw new SecurityError("verification command has an unterminated quote");
+  if (started) args.push(current);
+  if (!args.length) throw new SecurityError("verification command is empty");
+  return args;
+}
 
 // Minimal YAML reader for the two keys we care about. Supports a block list
 // (`allowed_commands:` followed by `- item` lines) and an inline array

@@ -94,7 +94,7 @@ REVIEWER_WORKER="$STARTED_WORKER_ID"
 wait_worker reviewer "$REVIEWER_WORKER"
 
 # The gate runner re-verifies the project and closes only reviewer-approved work.
-npm run --silent ai-kit:gate -- "$WF" --once --verify >/dev/null
+npm run --silent ai-kit:gate -- "$WF" --once >/dev/null
 
 echo "--- status ---"
 final_status="$($AIKIT --state ".ai-work/workflows/$WF/state/workflow.json" status)"

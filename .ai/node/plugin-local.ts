@@ -1,15 +1,34 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { PROJECT_ROOT } from "./engine.js";
-import { testCommand } from "./config.js";
+import { verificationCommands, verificationCwd } from "./config.js";
+import { assertCommandAllowed, parseCommand } from "./security.js";
 
 const [input, output] = process.argv.slice(2);
 if (!input || !output) throw new Error("usage: plugin-local <assignment.json> <qa.json>");
 const assignment = JSON.parse(readFileSync(input, "utf8"));
-const command = testCommand();
-const run = command ? spawnSync(command, { cwd: PROJECT_ROOT, shell: true, encoding: "utf8" }) : undefined;
-const passed = !run || run.status === 0;
+const checks = verificationCommands();
+const cwd = verificationCwd();
+const commands = checks.map((check) => check.command);
+let passed = checks.length > 0 && existsSync(cwd);
+let summary = passed
+  ? `verified by local QA: ${commands.join("; ")} in ${cwd}`
+  : "local QA failed: no verification commands or cwd configured";
+for (const check of checks) {
+  try {
+    const command = parseCommand(check.command);
+    assertCommandAllowed(command);
+    if (spawnSync(command[0], command.slice(1), { cwd, encoding: "utf8" }).status !== 0) {
+      passed = false;
+      summary = `local QA failed: ${check.name} (${check.command}) in ${cwd}`;
+      break;
+    }
+  } catch (error) {
+    passed = false;
+    summary = `local QA rejected: ${check.name}: ${(error as Error).message}`;
+    break;
+  }
+}
 mkdirSync(dirname(output), { recursive: true });
 writeFileSync(
   output,
@@ -21,8 +40,8 @@ writeFileSync(
       actor: assignment.actor,
       task: assignment.task,
       status: passed ? "pass" : "fail",
-      summary: passed ? "configured verification passed" : "configured verification failed",
-      commands: command ? [command] : [],
+      summary,
+      commands,
     },
     null,
     2,

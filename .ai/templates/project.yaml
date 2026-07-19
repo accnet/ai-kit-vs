@@ -13,8 +13,10 @@ workflow:
     require_qa: true
     require_review: false
 
-# Empty values mean that this project has not declared that check yet.
+# `cwd` is relative to the project root. Empty values mean that this project
+# has not declared that check yet.
 verification:
+  cwd:
   test_command:
   typecheck_command:
   build_command:

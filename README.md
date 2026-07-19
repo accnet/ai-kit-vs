@@ -121,7 +121,11 @@ bridge files without deleting the project's workflow state.
 
 Project configuration is kept in `.ai-work/` and can be committed separately
 from disposable workflow state. `project.yaml` declares stack, source
-directories, and verification commands. Fresh projects default AI providers to
+directories, verification cwd, and all verification commands. The gate runs
+every non-empty verification command by default. Use `--skip-verify` only for
+an explicitly controlled local bypass. Verification commands are parsed into
+argv, checked against the executable allowlist, and never run through a shell.
+Fresh projects default AI providers to
 `off`; select them once during setup, for example:
 
 ```bash
@@ -163,7 +167,7 @@ Then create the bounded task and let the extension use the normal agent API:
 ai-kit micro-task T1 --title "Fix the small defect" --owner backend --workflow-id default \
   --files src/example.ts --acceptance "focused test passes"
 ai-kit agent claim --workflow-id default --client-id codex-extension
-ai-kit-gate default --once --verify
+ai-kit-gate default --once
 ```
 
 The task is still claimed and records implementation and QA evidence. With
@@ -217,7 +221,7 @@ Run workers and gates when provider plugins are configured:
 ```bash
 ai-kit-worker list --workflow-id default
 ai-kit-worker start --workflow-id default --role executor
-ai-kit-gate default --once --verify
+ai-kit-gate default --once
 ```
 
 Editor agents can use the same control plane without a provider CLI worker:

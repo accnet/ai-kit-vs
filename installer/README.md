@@ -83,7 +83,7 @@ cd ~/projects/my-app
 ai-kit setup                                              # creates ./.ai-work and agent bridges
 ai-kit status
 ai-kit-worker start --workflow-id default --role executor
-ai-kit-gate default --once --verify
+ai-kit-gate default --once
 ```
 
 ## Uninstall

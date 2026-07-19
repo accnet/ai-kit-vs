@@ -1,7 +1,8 @@
 // Reproducibility lockfile — pins the exact runtime and control-plane inputs a
 // project depends on, so two machines can prove they run the same AI-Kit. The
-// lock captures runtime dependency versions plus content hashes of every plugin
-// manifest, the security policy, the model config, and capability manifests.
+// lock captures runtime dependency versions plus content hashes of role/skill
+// contracts, plugin manifests, the security policy, the model config, and
+// capability manifests.
 //
 // It does NOT (and cannot) pin model outputs — LLMs are non-deterministic. The
 // guarantee is over *process and configuration*, not generated results.
@@ -17,6 +18,8 @@ export const LOCK_PATH = join(ROOT, ".ai", "ai-kit.lock.json");
 export const PROJECT_LOCK_PATH = join(PROJECT_ROOT, ".ai-kit.project.lock.json");
 const NODE_PKG = join(ROOT, ".ai", "node", "package.json");
 const RUNTIME = join(ROOT, ".ai", "node");
+const AGENTS = join(ROOT, ".ai", "agents");
+const SKILLS = join(ROOT, ".ai", "skills");
 const PLUGINS = join(ROOT, ".ai", "plugins");
 const CAPABILITIES = join(ROOT, ".ai", "capabilities");
 
@@ -57,6 +60,8 @@ export type Lock = {
   node_range: string | null;
   runtime: Record<string, string>;
   runtime_source: Record<string, string>;
+  agents: Record<string, string>;
+  skills: Record<string, string>;
   plugins: Record<string, string>;
   capabilities: Record<string, string>;
   security: string | null;
@@ -86,6 +91,8 @@ export function computeLock(): Omit<Lock, "generated_at"> {
     node_range: nodeRange,
     runtime: runtimeVersions(),
     runtime_source: hashTree(RUNTIME, (name) => [".ts", ".json", ".mjs"].includes(extname(name))),
+    agents: hashTree(AGENTS, (name) => [".md", ".json", ".yaml", ".yml"].includes(extname(name))),
+    skills: hashTree(SKILLS, (name) => [".md", ".json", ".yaml", ".yml"].includes(extname(name))),
     plugins: hashTree(PLUGINS, (name) => name.endsWith(".json")),
     capabilities: hashTree(CAPABILITIES, (name) => name.endsWith(".json")),
     security: hashFile(join(ROOT, ".ai", "security.yaml")),
@@ -119,6 +126,8 @@ export function verifyLock(path = LOCK_PATH): { ok: boolean; drift: LockDrift[] 
     "node_range",
     "runtime",
     "runtime_source",
+    "agents",
+    "skills",
     "plugins",
     "capabilities",
     "security",

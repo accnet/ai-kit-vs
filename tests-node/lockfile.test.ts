@@ -10,6 +10,8 @@ test("computeLock is deterministic and hashes the shipped plugins", () => {
   const b = computeLock();
   assert.deepEqual(a, b);
   assert.ok(Object.keys(a.plugins).length > 0, "expected plugin hashes");
+  assert.ok(Object.keys(a.agents).length > 0, "expected agent contract hashes");
+  assert.ok(Object.keys(a.skills).length > 0, "expected skill hashes");
   assert.ok(Object.keys(a.runtime_source).length > 0, "expected runtime source hashes");
   assert.ok(a.runtime.zod, "expected the zod runtime version to be pinned");
   assert.equal(typeof a.security, "string");
@@ -50,6 +52,16 @@ test("verifyLock detects changed runtime source", () => {
   const result = verifyLock(path);
   assert.equal(result.ok, false);
   assert.ok(result.drift.some((d) => d.key === "runtime_source.synthetic.ts"));
+});
+
+test("verifyLock detects changed agent contracts", () => {
+  const lock = buildLock();
+  const path = join(mkdtempSync(join(tmpdir(), "lock-agents-drift-")), "ai-kit.lock.json");
+  lock.agents = { ...lock.agents, ".ai/agents/backend/rules.md": "tampered" };
+  writeFileSync(path, JSON.stringify(lock, null, 2));
+  const result = verifyLock(path);
+  assert.equal(result.ok, false);
+  assert.ok(result.drift.some((d) => d.key === "agents..ai/agents/backend/rules.md"));
 });
 
 test("readLock throws when the lockfile is missing", () => {

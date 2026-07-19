@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { kitArray, kitScalar, microTaskPolicy, testCommand } from "../.ai/node/config.js";
+import { kitArray, kitScalar, microTaskPolicy, testCommand, verificationCommands } from "../.ai/node/config.js";
 
 const SAMPLE = ["kit:", "  id: ai-kit", "  test_command: npm run test:ci", "project:", "  stack: [node, php]"].join(
   "\n",
@@ -73,4 +73,21 @@ test("testCommand does not inherit the global command for an unconfigured projec
 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), "");
+});
+
+test("verificationCommands reads every declared verification check", () => {
+  const source = [
+    "verification:",
+    "  cwd: app",
+    "  test_command: npm test",
+    "  typecheck_command: npm run typecheck",
+    "  build_command: npm run build",
+    "  lint_command: npm run lint",
+  ].join("\n");
+  assert.deepEqual(verificationCommands(source), [
+    { name: "test_command", command: "npm test" },
+    { name: "typecheck_command", command: "npm run typecheck" },
+    { name: "build_command", command: "npm run build" },
+    { name: "lint_command", command: "npm run lint" },
+  ]);
 });

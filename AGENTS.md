@@ -257,13 +257,17 @@ when used from a consuming project (state commands accept `--state <path>`):
 - Providers run through the CLI provider adapter
   (`.ai/engine/provider-adapter.md`), and only executables allowlisted in
   `.ai/security.yaml` may launch.
+- Verification commands from project config are parsed as argv, checked against
+  the same executable allowlist, and run without a shell.
 
 Automation entry points (global launchers):
 
 - `ai-kit-worker <start|stop|list|status>` manages provider workers
   (`start --workflow-id ID [--role executor|qa|reviewer|planner] [--plugin ID]`).
-- `ai-kit-gate <workflow-id> [--once] [--verify]` runs independent QA
-  and closes tasks only after a reviewer plugin has approved them.
+- `ai-kit-gate <workflow-id> [--once]` runs every configured verification check
+  by default and closes tasks only after a reviewer plugin has approved them.
+  `--skip-verify` is an explicit local bypass; `--roles review` is rejected
+  because review must be submitted through `ai-kit agent review`.
 
 The VS Code extension in `extension/` is a thin UI client that shells out to
 these commands (read-only views plus start-worker / run-gates controls) and holds

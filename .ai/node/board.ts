@@ -304,8 +304,10 @@ export function submitQaArtifact(workflowId: string, taskId: string, actor: stri
   const qa = readArtifact(output, "qa") as QaOutput;
   if (qa.workflow_id !== workflowId || qa.task !== taskId || qa.actor !== actor)
     throw new engine.EngineError("QA artifact does not match the task or actor");
-  if (qa.status !== "pass") return engine.transition(path, taskId, "block", actor, `QA failed: ${qa.summary}`);
-  return engine.transition(path, taskId, "qa-pass", actor, qa.summary, [displayArtifactPath(output)]);
+  const evidence = displayArtifactPath(output);
+  if (qa.status !== "pass")
+    return engine.transition(path, taskId, "block", actor, `QA failed: ${qa.summary}`, [evidence]);
+  return engine.transition(path, taskId, "qa-pass", actor, qa.summary, [evidence]);
 }
 export function submitQa(
   workflowId: string,

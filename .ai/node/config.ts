@@ -4,7 +4,7 @@
 // so this module stays safe to import from the engine.
 
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { PROJECT_ROOT, ROOT, WORK } from "./engine.js";
 
 export const kitPath = () => {
@@ -91,6 +91,49 @@ function nestedScalar(path: string[], source: string): string | undefined {
   return undefined;
 }
 
+const VERIFICATION_KEYS = ["test_command", "typecheck_command", "build_command", "lint_command"] as const;
+export type VerificationKey = (typeof VERIFICATION_KEYS)[number];
+export type VerificationCheck = { name: VerificationKey; command: string };
+
+export function projectConfigPath() {
+  return [
+    join(WORK, "project.yaml"),
+    join(PROJECT_ROOT, ".ai-work", "project.yaml"),
+    join(PROJECT_ROOT, ".ai", "kit.yaml"),
+  ].find((path) => existsSync(path));
+}
+
+export function verificationCommands(source?: string): VerificationCheck[] {
+  const projectPath = projectConfigPath();
+  const configuredSource =
+    source ?? (projectPath ? readFileSync(projectPath, "utf8") : PROJECT_ROOT === ROOT ? readKit() : undefined);
+  const checks = VERIFICATION_KEYS.flatMap((name) => {
+    const command = configuredSource ? nestedScalar(["verification", name], configuredSource) : undefined;
+    return command ? [{ name, command }] : [];
+  });
+
+  // A project with a package test script gets a useful default, but a global
+  // kit config must never impose its commands on an unrelated project.
+  if (!checks.some((item) => item.name === "test_command")) {
+    const packageJson = join(PROJECT_ROOT, "package.json");
+    if (existsSync(packageJson)) {
+      try {
+        const parsed = JSON.parse(readFileSync(packageJson, "utf8")) as { scripts?: Record<string, unknown> };
+        if (typeof parsed.scripts?.test === "string" && parsed.scripts.test.trim())
+          checks.unshift({ name: "test_command", command: "npm test" });
+      } catch {}
+    }
+  }
+  return checks;
+}
+
+export function verificationCwd(source?: string) {
+  if (source !== undefined) return ".";
+  const projectPath = projectConfigPath();
+  const configured = projectPath ? nestedScalar(["verification", "cwd"], readFileSync(projectPath, "utf8")) : undefined;
+  return resolve(PROJECT_ROOT, configured ?? ".");
+}
+
 const booleanValue = (value: string | undefined, fallback: boolean) =>
   value === "true" ? true : value === "false" ? false : fallback;
 
@@ -109,22 +152,5 @@ export function microTaskPolicy(source = readKit()): MicroTaskPolicy {
 // npm package that declares a test script.
 export const testCommand = (source?: string): string | undefined => {
   if (source !== undefined) return kitScalar("test_command", source);
-
-  const projectKit = [
-    join(WORK, "project.yaml"),
-    join(PROJECT_ROOT, ".ai-work", "project.yaml"),
-    join(PROJECT_ROOT, ".ai", "kit.yaml"),
-  ].find((path) => existsSync(path));
-  if (projectKit) return kitScalar("test_command", readFileSync(projectKit, "utf8"));
-
-  const packageJson = join(PROJECT_ROOT, "package.json");
-  if (!existsSync(packageJson)) return undefined;
-  try {
-    const parsed = JSON.parse(readFileSync(packageJson, "utf8")) as { scripts?: Record<string, unknown> };
-    if (typeof parsed.scripts?.test !== "string" || !parsed.scripts.test.trim()) return undefined;
-  } catch {
-    return undefined;
-  }
-
-  return kitScalar("test_command") ?? "npm test";
+  return verificationCommands().find((item) => item.name === "test_command")?.command;
 };

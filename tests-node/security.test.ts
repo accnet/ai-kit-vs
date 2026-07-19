@@ -4,6 +4,7 @@ import {
   assertCommandAllowed,
   commandName,
   DEFAULT_ALLOWED,
+  parseCommand,
   parseSecurityPolicy,
   SecurityError,
   type SecurityPolicy,
@@ -50,6 +51,19 @@ test("allow_any disables enforcement", () => {
 test("commandName strips directory and Windows extension", () => {
   assert.equal(commandName("/usr/local/bin/codex"), "codex");
   assert.equal(commandName("C:\\tools\\claude.CMD"), "claude");
+});
+
+test("parseCommand preserves quoted arguments without enabling shell syntax", () => {
+  assert.deepEqual(parseCommand('node -e "process.exit(0)"'), ["node", "-e", "process.exit(0)"]);
+  assert.deepEqual(parseCommand("npm test && node -e 'process.exit(1)'"), [
+    "npm",
+    "test",
+    "&&",
+    "node",
+    "-e",
+    "process.exit(1)",
+  ]);
+  assert.throws(() => parseCommand('node -e "unterminated'), SecurityError);
 });
 
 test("every shipped plugin passes the default allowlist", () => {

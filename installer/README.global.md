@@ -34,7 +34,7 @@ the runtime into the project.
 Setup also creates two project configuration files:
 
 ```text
-.ai-work/project.yaml   # stack, source directories, verification commands
+.ai-work/project.yaml   # stack, source directories, verification cwd/checks
 .ai-work/models.yaml    # provider selection; defaults to off
 ```
 
@@ -104,7 +104,7 @@ Run workers and gates after provider plugins are configured:
 ```bash
 ai-kit-worker list --workflow-id default
 ai-kit-worker start --workflow-id default --role executor
-ai-kit-gate default --once --verify
+ai-kit-gate default --once
 ```
 
 Editor agents can act as AI-Kit clients without enabling a provider CLI:

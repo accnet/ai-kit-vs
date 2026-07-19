@@ -1,25 +1,65 @@
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import * as board from "./board.js";
 import * as engine from "./engine.js";
-import { microTaskPolicy, testCommand } from "./config.js";
+import { microTaskPolicy, verificationCommands, verificationCwd } from "./config.js";
+import { assertCommandAllowed, parseCommand } from "./security.js";
 
-export type GateRoles = { qa: boolean; review: boolean; release: boolean };
-export const ALL_ROLES: GateRoles = { qa: true, review: true, release: true };
+export type GateRoles = { qa: boolean; release: boolean };
+export const ALL_ROLES: GateRoles = { qa: true, release: true };
 export type GateAction = { task: string; action: string };
 
 const taskById = (workflowId: string, id: string) =>
   engine.taskMap(engine.load<engine.State>(engine.workflowStatePath(workflowId))).get(id);
 
-// Independent re-verification: a gate client re-runs the project test command
-// instead of trusting the executor's self-reported evidence.
-function verify(): boolean {
-  if (process.env.AIKIT_SKIP_VERIFY) return true;
-  const command = testCommand();
-  if (!command) return true;
-  return spawnSync(command, { cwd: engine.PROJECT_ROOT, shell: true, encoding: "utf8" }).status === 0;
+export type VerificationResult = {
+  passed: boolean;
+  commands: string[];
+  summary: string;
+};
+
+// Independent re-verification: a gate client re-runs every declared project
+// check instead of trusting the executor's self-reported evidence.
+export function verify(checks = verificationCommands(), cwd = verificationCwd()): VerificationResult {
+  if (process.env.AIKIT_SKIP_VERIFY)
+    return { passed: true, commands: [], summary: "verification skipped by AIKIT_SKIP_VERIFY" };
+
+  if (!checks.length)
+    return { passed: false, commands: [], summary: "verification failed: no verification commands are configured" };
+
+  if (!existsSync(cwd))
+    return { passed: false, commands: [], summary: `verification failed: configured cwd does not exist: ${cwd}` };
+
+  const commands: string[] = [];
+  for (const check of checks) {
+    commands.push(check.command);
+    let command: string[];
+    try {
+      command = parseCommand(check.command);
+      assertCommandAllowed(command);
+    } catch (error) {
+      return {
+        passed: false,
+        commands,
+        summary: `verification rejected: ${check.name}: ${(error as Error).message}`,
+      };
+    }
+    const result = spawnSync(command[0], command.slice(1), { cwd, encoding: "utf8" });
+    if (result.status !== 0)
+      return {
+        passed: false,
+        commands,
+        summary: `verification failed: ${check.name} (${check.command}) in ${engine.displayPath(cwd)}`,
+      };
+  }
+  return {
+    passed: true,
+    commands,
+    summary: `verified by gate-runner: ${commands.join("; ")} in ${engine.displayPath(cwd)}`,
+  };
 }
 
 // One pass over a workflow's gates. Acts only on attempts implemented by a
@@ -29,10 +69,13 @@ export function runGateCycle(
   workflowId: string,
   client: string,
   roles: GateRoles = ALL_ROLES,
-  reverify = false,
+  reverify = true,
 ): GateAction[] {
   const acted: GateAction[] = [];
   const policy = microTaskPolicy();
+  const verification = reverify
+    ? verify()
+    : ({ passed: true, commands: [], summary: "verification bypassed by caller" } satisfies VerificationResult);
   const isMicro = (id: string) => {
     const task = taskById(workflowId, id);
     return policy.enabled && task?.tags.includes("micro");
@@ -41,17 +84,17 @@ export function runGateCycle(
 
   if (roles.qa)
     for (const item of board.pendingReview(workflowId).awaiting_qa)
-      if (byOther(item.id) && (!isMicro(item.id) || policy.requireQa) && (!reverify || verify()))
+      if (byOther(item.id) && (!isMicro(item.id) || policy.requireQa))
         try {
           board.submitQa(
             workflowId,
             item.id,
             client,
-            "pass",
-            "verified by gate-runner",
-            reverify && testCommand() ? [testCommand()!] : [],
+            verification.passed ? "pass" : "fail",
+            verification.summary,
+            verification.commands,
           );
-          acted.push({ task: item.id, action: "qa-pass" });
+          acted.push({ task: item.id, action: verification.passed ? "qa-pass" : "qa-fail" });
         } catch {}
 
   // Review must come from the configured reviewer plugin. The gate runner may
@@ -86,7 +129,7 @@ export function drainGates(
   workflowId: string,
   client: string,
   roles: GateRoles = ALL_ROLES,
-  reverify = false,
+  reverify = true,
 ): GateAction[] {
   const acted: GateAction[] = [];
   for (let pass = 0; pass < 50; pass++) {
@@ -100,24 +143,35 @@ export function drainGates(
 const isMain = !!process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
   const argv = process.argv.slice(2);
+  if (argv.includes("--help") || argv.includes("-h")) {
+    console.log(
+      "usage: gate-runner <workflow-id> [--client-id X] [--roles qa,release] [--interval-ms N] [--once] [--verify] [--skip-verify]",
+    );
+    process.exit(0);
+  }
   const option = (key: string, fallback?: string) => {
     const index = argv.indexOf(key);
     return index >= 0 ? argv[index + 1] : fallback;
   };
   const workflowId = argv.find((item) => !item.startsWith("--"));
   const client = option("--client-id", process.env.AIKIT_GATE_CLIENT ?? "gatekeeper")!;
-  const chosen = (option("--roles", "qa,review,release") ?? "").split(",");
+  const chosen = (option("--roles", "qa,release") ?? "").split(",").filter(Boolean);
+  const unsupported = chosen.filter((role) => !["qa", "release"].includes(role));
   const roles: GateRoles = {
     qa: chosen.includes("qa"),
-    review: chosen.includes("review"),
     release: chosen.includes("release"),
   };
-  const reverify = argv.includes("--verify") || !!process.env.AIKIT_GATE_VERIFY;
+  const reverify = !argv.includes("--skip-verify") || argv.includes("--verify") || !!process.env.AIKIT_GATE_VERIFY;
   const interval = Number(option("--interval-ms", "2000"));
   const once = argv.includes("--once");
   if (!workflowId) {
     console.error(
-      "usage: gate-runner <workflow-id> [--client-id X] [--roles qa,review,release] [--interval-ms N] [--once] [--verify]",
+      "usage: gate-runner <workflow-id> [--client-id X] [--roles qa,release] [--interval-ms N] [--once] [--verify] [--skip-verify]",
+    );
+    process.exitCode = 2;
+  } else if (unsupported.length) {
+    console.error(
+      `unsupported gate role(s): ${unsupported.join(", ")}; review must be submitted through ai-kit agent review`,
     );
     process.exitCode = 2;
   } else {
