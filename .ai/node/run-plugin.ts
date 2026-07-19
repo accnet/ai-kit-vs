@@ -5,6 +5,7 @@ import { configuredPluginId } from "./models.js";
 import { loadPlugin } from "./plugins.js";
 import { invokeProvider } from "./provider-adapter.js";
 import { markWorker, stopRequested } from "./worker-manager.js";
+import * as engine from "./engine.js";
 
 const argv = process.argv.slice(2);
 const role = argv.shift() as PluginRole;
@@ -31,7 +32,7 @@ function taskFor(role: PluginRole, workflow: string, actor: string) {
   if (role === "planner")
     return {
       claimed: "plan",
-      title: "Create workflow plan",
+      title: engine.load<engine.State>(engine.workflowStatePath(workflow)).title,
       owner: "planner",
       context_manifest: board.planContext(workflow, actor),
     };
@@ -52,7 +53,17 @@ function taskFor(role: PluginRole, workflow: string, actor: string) {
     : { claimed: null, reason: "no pending work" };
 }
 
-function prompt(role: PluginRole, input: string, output: string) {
+export function prompt(role: PluginRole, input: string, output: string) {
+  const artifactContract =
+    role === "planner"
+      ? `The plan JSON must use exactly these fields: version, kind="plan", workflow_id, actor, goal, and tasks. Each task must use id, title, owner, phase, needs, acceptance, files, and tags. Task owner must be one of these agent roles: ${[...engine.roleNames()].join(", ")}. Never use generic owner names such as executor or implementer.`
+      : role === "executor"
+        ? 'The result JSON must use exactly these fields: version, kind="result", workflow_id, actor, task, attempt_id, status, summary, changed_paths, commands, and optional branch. status must be exactly "pass" or "fail". Do not use completed, files_changed, acceptance, or other alternative field names.'
+        : role === "reviewer"
+          ? 'The review JSON must use exactly these fields: version, kind="review", workflow_id, actor, task, verdict, notes. verdict must be exactly "approve" or "changes-requested". Do not use status, summary, findings, or evidence field names.'
+          : role === "qa"
+            ? 'The QA JSON must use exactly these fields: version, kind="qa", workflow_id, actor, task, status, summary, commands. status must be exactly "pass" or "fail".'
+            : undefined;
   return [
     `You are the ${role} plugin for AI-Kit.`,
     `Read the JSON assignment at ${input}.`,
@@ -60,7 +71,9 @@ function prompt(role: PluginRole, input: string, output: string) {
     `Perform only the assigned role work.`,
     "For QA or review, inspect the assignment acceptance criteria, changed files, and evidence paths before deciding.",
     `Write exactly one valid ${artifactForRole[role]} JSON artifact to ${output}.`,
+    ...(artifactContract ? [artifactContract] : []),
     "Make the final response exactly the same JSON object, with no markdown fences or commentary.",
+    "The provider wrapper writes the final response to the output artifact path. Do not use file tools to create or edit that artifact path; use file tools only for assigned project files.",
     "Do not modify workflow state or communicate with other agents.",
   ].join("\n");
 }

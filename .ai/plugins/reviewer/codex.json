@@ -9,6 +9,8 @@
     "--skip-git-repo-check",
     "--sandbox",
     "read-only",
+    "--add-dir",
+    "{work}",
     "-c",
     "model_reasoning_effort=low",
     "--output-last-message",

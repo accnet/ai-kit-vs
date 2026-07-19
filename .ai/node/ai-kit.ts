@@ -133,6 +133,21 @@ const handlers: Record<string, () => unknown> = {
       writeFileSync(destination, readFileSync(join(ROOT, ".ai", "templates", name)));
       initializedProjectConfigs.push(displayPath(destination));
     }
+    const providerRoles = ["planner", "executor", "qa", "reviewer"] as const;
+    const selectedProviderRoles = providerRoles.filter((role) => values.has(role));
+    if (selectedProviderRoles.length) {
+      const modelsPath = join(WORK, "models.yaml");
+      if (existsSync(modelsPath) && !initializedProjectConfigs.includes(displayPath(modelsPath)) && !flag("force"))
+        throw new EngineError(
+          `models.yaml already exists: ${displayPath(modelsPath)}; use --force to change providers`,
+        );
+      const selected = providerRoles.map((role) => {
+        const value = one(role) ?? "off";
+        if (!/^[a-z0-9][a-z0-9-]*$/.test(value)) throw new EngineError(`--${role} must be a plugin id or off`);
+        return `${role}: ${value}`;
+      });
+      writeFileSync(modelsPath, `${selected.join("\n")}\n`);
+    }
     const registry = join(WORK, "registry.json");
     if (!existsSync(registry)) writeFileSync(registry, '{\n  "version": 1,\n  "revision": 0,\n  "workflows": []\n}\n');
     if (!existsSync(statePath)) {
@@ -298,6 +313,48 @@ const handlers: Record<string, () => unknown> = {
       task: task.id,
       ...runtime.artifacts.assembleContext([route.role_contract, ...route.context, ...route.skills], budget),
     };
+  },
+  agent: () => {
+    const sub = argv.shift();
+    const workflowId = one("workflow-id", true)!;
+    const clientId = one("client-id", true)!;
+    if (sub === "claim") return runtime.agent.claim(workflowId, clientId, one("owner"));
+    if (sub === "context")
+      return runtime.agent.context(workflowId, one("task-id", true)!, clientId, one("attempt-id", true)!);
+    if (sub === "heartbeat")
+      return runtime.agent.heartbeat(workflowId, one("task-id", true)!, clientId, one("attempt-id", true)!);
+    if (sub === "result")
+      return runtime.agent.submitResult(
+        workflowId,
+        one("task-id", true)!,
+        clientId,
+        one("attempt-id", true)!,
+        one("summary", true)!,
+        (one("status", true) ?? "fail") as "pass" | "fail",
+        many("changed-path"),
+        many("command"),
+        one("branch"),
+      );
+    if (sub === "qa")
+      return runtime.agent.submitQa(
+        workflowId,
+        one("task-id", true)!,
+        clientId,
+        (one("status", true) ?? "fail") as "pass" | "fail",
+        one("summary", true)!,
+        many("command"),
+      );
+    if (sub === "review")
+      return runtime.agent.submitReview(
+        workflowId,
+        one("task-id", true)!,
+        clientId,
+        (one("verdict", true) ?? "changes-requested") as "approve" | "changes-requested",
+        one("notes") ?? "",
+      );
+    throw new EngineError(
+      "usage: agent <claim|context|heartbeat|result|qa|review> --workflow-id ID --client-id ID [options]",
+    );
   },
   bundle: () => {
     const state = load<any>(statePath),

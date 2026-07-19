@@ -22,9 +22,13 @@ Linux / macOS:
 
 ```bash
 bash installer/install.sh
-export PATH="$HOME/ai-kit/bin:$PATH"   # add to ~/.bashrc or ~/.zshrc
+source ~/.bashrc
 ai-kit version
 ```
+
+The Bash installer adds `~/ai-kit/bin` to `~/.bashrc`. Add the equivalent
+export to `~/.zshrc` yourself when using zsh. A custom `--home` path is printed
+for manual PATH configuration and does not modify `~/.bashrc`.
 
 After this one-time device install, a new project is initialized from its own
 root with the global runtime:
@@ -36,8 +40,9 @@ ai-kit status
 ```
 
 `ai-kit setup` creates `.ai-work/`, `AGENTS.md`, and the compatibility bridges
-for VS Code, Copilot, Claude, Codex, Cursor, and Gemini. The runtime remains
-in `~/ai-kit`.
+for VS Code, Copilot, Claude, Codex, Cursor, and Gemini. AI providers default
+to `off`; select them during setup with flags such as
+`--planner claude --executor codex`. The runtime remains in `~/ai-kit`.
 
 Windows (PowerShell):
 

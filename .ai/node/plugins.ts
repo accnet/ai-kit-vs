@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { PluginRole, type PluginRole as Role } from "./artifacts.js";
-import { PROJECT_ROOT, ROOT } from "./engine.js";
+import { PROJECT_ROOT, ROOT, WORK } from "./engine.js";
 import { resolvePluginPath } from "./home.js";
 import { assertCommandAllowed } from "./security.js";
 
@@ -50,7 +50,7 @@ const validCapabilities = (value: unknown): boolean => {
 export function loadPlugin(role: Role, id: string): Plugin {
   if (!PluginRole.safeParse(role).success || !validId(id)) throw new PluginError("invalid plugin role or ID");
   // Project plugins take precedence over the shared global home.
-  const path = resolvePluginPath(PROJECT_ROOT, role, id) ?? join(DIR, role, `${id}.json`);
+  const path = resolvePluginPath(PROJECT_ROOT, role, id, WORK) ?? join(DIR, role, `${id}.json`);
   let plugin: Plugin;
   try {
     plugin = JSON.parse(readFileSync(path, "utf8"));
@@ -80,6 +80,7 @@ export const pluginCommand = (plugin: Plugin, input: string, output: string, pro
       .replaceAll("{input}", input)
       .replaceAll("{output}", output)
       .replaceAll("{prompt}", prompt)
+      .replaceAll("{work}", WORK)
       .replaceAll("{runtime}", ROOT),
   );
 

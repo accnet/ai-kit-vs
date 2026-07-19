@@ -60,6 +60,38 @@ test("default device install separates kit home from project work state", () => 
   assert.ok(existsSync(join(kit, "bin", "ai-kit")));
   assert.equal(existsSync(join(kit, ".ai-work")), false);
   assert.match(readFileSync(join(kit, "bin", "ai-kit"), "utf8"), /AIKIT_WORK=.*PWD\/\.ai-work/);
+  assert.equal(readFileSync(join(home, ".bashrc"), "utf8").match(/export PATH=.*ai-kit\/bin/g)?.length, 1);
+});
+
+test("default device install does not duplicate the Bash PATH entry", () => {
+  const home = mkdtempSync(join(tmpdir(), "aikit-installer-bashrc-"));
+  const env = { ...process.env, HOME: home, AIKIT_HOME: "" };
+  let out = spawnSync("bash", ["install.sh", "--no-deps"], { cwd: REPO, env, encoding: "utf8" });
+  assert.equal(out.status, 0, out.stderr);
+  out = spawnSync("bash", ["install.sh", "--force", "--no-deps"], { cwd: REPO, env, encoding: "utf8" });
+  assert.equal(out.status, 0, out.stderr);
+  assert.equal(readFileSync(join(home, ".bashrc"), "utf8").match(/export PATH=.*ai-kit\/bin/g)?.length, 1);
+});
+
+test("dry-run and custom device installs do not modify the Bash profile", () => {
+  const dryRunHome = mkdtempSync(join(tmpdir(), "aikit-installer-dry-run-"));
+  let out = spawnSync("bash", ["install.sh", "--dry-run"], {
+    cwd: REPO,
+    env: { ...process.env, HOME: dryRunHome, AIKIT_HOME: "" },
+    encoding: "utf8",
+  });
+  assert.equal(out.status, 0, out.stderr);
+  assert.equal(existsSync(join(dryRunHome, ".bashrc")), false);
+
+  const customHome = mkdtempSync(join(tmpdir(), "aikit-installer-custom-home-"));
+  const target = join(customHome, "custom-kit");
+  out = spawnSync("bash", ["install.sh", "--home", target, "--no-deps"], {
+    cwd: REPO,
+    env: { ...process.env, HOME: customHome, AIKIT_HOME: "" },
+    encoding: "utf8",
+  });
+  assert.equal(out.status, 0, out.stderr);
+  assert.equal(existsSync(join(customHome, ".bashrc")), false);
 });
 
 test("global ai-kit setup bootstraps a new project without a local runtime", () => {
@@ -86,12 +118,36 @@ test("global ai-kit setup bootstraps a new project without a local runtime", () 
     assert.ok(existsSync(join(project, file)), `missing ${file}`);
   assert.equal(existsSync(join(project, ".ai")), false);
   assert.equal(existsSync(join(project, "node_modules")), false);
+  assert.equal(
+    readFileSync(join(project, ".ai-work/models.yaml"), "utf8"),
+    "planner: off\nexecutor: off\nqa: local\nreviewer: off\n",
+  );
   const gitignore = readFileSync(join(project, ".gitignore"), "utf8");
   assert.match(gitignore, /\.ai-work\/\*/);
   assert.match(gitignore, /!\.ai-work\/models\.yaml/);
   assert.deepEqual(JSON.parse(readFileSync(join(project, ".vscode/settings.json"), "utf8")), {
     "aiKit.home": "~/ai-kit",
   });
+});
+
+test("setup can opt providers in once through project configuration", () => {
+  const project = mkdtempSync(join(tmpdir(), "aikit-setup-providers-"));
+  const out = runKitInProject(project, [
+    "setup",
+    "--planner",
+    "claude",
+    "--executor",
+    "codex",
+    "--qa",
+    "local",
+    "--reviewer",
+    "codex",
+  ]);
+  assert.equal(out.status, 0, out.stderr);
+  assert.equal(
+    readFileSync(join(project, ".ai-work", "models.yaml"), "utf8"),
+    "planner: claude\nexecutor: codex\nqa: local\nreviewer: codex\n",
+  );
 });
 
 test("setup preserves project provider overrides on refresh", () => {

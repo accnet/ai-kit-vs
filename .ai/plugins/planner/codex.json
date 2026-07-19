@@ -3,6 +3,19 @@
   "id": "codex",
   "role": "planner",
   "transport": "cli",
-  "command": ["codex", "exec", "--skip-git-repo-check", "--sandbox", "workspace-write", "{prompt}"],
+  "command": [
+    "codex",
+    "exec",
+    "--skip-git-repo-check",
+    "--sandbox",
+    "workspace-write",
+    "--add-dir",
+    "{work}",
+    "-c",
+    "model_reasoning_effort=low",
+    "--output-last-message",
+    "{output}",
+    "{prompt}"
+  ],
   "description": "Codex CLI planner adapter."
 }

@@ -15,6 +15,7 @@ TARGET="${AIKIT_HOME:-$HOME/ai-kit}"
 FORCE=0
 DRY_RUN=0
 NO_DEPS=0
+BASHRC_PATH_CONFIGURED=0
 
 usage() {
   cat >&2 <<EOF
@@ -124,7 +125,33 @@ else
   echo "Warning: dependencies were skipped; run npm --prefix \"$TARGET/.ai/node\" install before using the CLI." >&2
 fi
 
+configure_bashrc_path() {
+  local bashrc="$HOME/.bashrc"
+  local path_line='export PATH="$HOME/ai-kit/bin:$PATH"'
+
+  if [[ "$TARGET" != "$HOME/ai-kit" ]]; then
+    return
+  fi
+
+  if [[ -f "$bashrc" ]] && grep -Eq '^[[:space:]]*export[[:space:]]+PATH=.*\$HOME/ai-kit/bin([:/\"]|$)' "$bashrc"; then
+    BASHRC_PATH_CONFIGURED=1
+    echo "Bash PATH already contains $HOME/ai-kit/bin"
+    return
+  fi
+
+  if [[ -s "$bashrc" ]]; then printf '\n' >> "$bashrc"; fi
+  printf '# AI-Kit\n%s\n' "$path_line" >> "$bashrc"
+  BASHRC_PATH_CONFIGURED=1
+  echo "Added $HOME/ai-kit/bin to $bashrc"
+}
+
+configure_bashrc_path
+
 echo "AI-Kit installed into $TARGET"
-echo "Add it to your PATH:"
-echo "  export PATH=\"$TARGET/bin:\$PATH\""
+if [[ "$BASHRC_PATH_CONFIGURED" -eq 0 ]]; then
+  echo "Add it to your PATH:"
+  echo "  export PATH=\"$TARGET/bin:\$PATH\""
+else
+  echo "Start a new Bash shell or run: source \"$HOME/.bashrc\""
+fi
 echo "Then run:  ai-kit version"

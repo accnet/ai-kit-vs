@@ -3,6 +3,19 @@
   "id": "claude",
   "role": "executor",
   "transport": "cli",
-  "command": ["claude", "-p", "{prompt}"],
+  "command": [
+    "claude",
+    "--allowedTools",
+    "Read",
+    "Write",
+    "Edit",
+    "Bash(node --check *)",
+    "Bash(npm *)",
+    "Bash(pnpm *)",
+    "Bash(yarn *)",
+    "Bash(bun *)",
+    "-p",
+    "{prompt}"
+  ],
   "description": "Claude Code executor adapter."
 }

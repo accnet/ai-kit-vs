@@ -49,6 +49,7 @@ test("Node plugin contract discovers role-scoped manifests", () => {
   );
   const plugin = listPlugins("executor").find((item) => item.id === "codex")!;
   assert.ok(pluginCommand(plugin, "input.json", "output.json", "hello").includes("hello"));
+  assert.ok(pluginCommand(plugin, "input.json", "output.json", "hello").includes("{work}") === false);
   const local = listPlugins("qa").find((item) => item.id === "local")!;
   assert.ok(pluginCommand(local, "input.json", "output.json", "hello")[1].startsWith("/"));
 });

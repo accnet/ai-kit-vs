@@ -6,14 +6,18 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { PROJECT_ROOT, ROOT } from "./engine.js";
+import { PROJECT_ROOT, ROOT, WORK } from "./engine.js";
 
 export class SecurityError extends Error {}
 
 export type SecurityPolicy = { allowedCommands: Set<string>; allowAny: boolean };
 
 const GLOBAL_CONFIG = join(ROOT, ".ai", "security.yaml");
-const PROJECT_CONFIGS = [join(PROJECT_ROOT, ".ai-work", "security.yaml"), join(PROJECT_ROOT, ".ai", "security.yaml")];
+const PROJECT_CONFIGS = [
+  join(WORK, "security.yaml"),
+  join(PROJECT_ROOT, ".ai-work", "security.yaml"),
+  join(PROJECT_ROOT, ".ai", "security.yaml"),
+];
 export const DEFAULT_ALLOWED = [
   "node",
   "npx",

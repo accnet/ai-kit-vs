@@ -3,6 +3,14 @@
   "id": "claude",
   "role": "planner",
   "transport": "cli",
-  "command": ["claude", "-p", "{prompt}"],
+  "command": [
+    "claude",
+    "--allowedTools",
+    "Read",
+    "Write",
+    "Edit",
+    "-p",
+    "{prompt}"
+  ],
   "description": "Claude CLI planner adapter."
 }

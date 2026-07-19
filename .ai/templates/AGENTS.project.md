@@ -37,6 +37,9 @@ Run from the project root; state stays in `.ai-work/`:
 - `npm run ai-kit -- ready` — tasks ready to work on.
 - `npm run ai-kit -- show` — full state.
 - `npm run ai-kit -- route <task-id>` — role contract, skills, and context for a task.
+- `ai-kit agent claim --workflow-id <id> --client-id <extension-id>` — claim the next task through the State Manager.
+- `ai-kit agent context --workflow-id <id> --task-id <task> --client-id <client> --attempt-id <attempt>` — load the claimed context.
+- `ai-kit agent result --workflow-id <id> --task-id <task> --client-id <client> --attempt-id <attempt> --status pass --summary "..."` — submit implementation evidence.
 - `npm run ai-kit -- timeline` — event history.
 - `npm run ai-kit:worker -- start --workflow-id <id> --role executor` — run a provider worker.
 - `npm run ai-kit:gate -- <workflow-id> --once` — run QA and close tasks after reviewer approval.
@@ -60,23 +63,33 @@ files. Do not delete or reset existing `.ai-work` state as part of setup.
 
 Use the following intent map instead of asking the user to run a batch command:
 
-| User intent | Agent action |
-| --- | --- |
-| "plan this feature", "break this into tasks" | Read the planner contract, inspect `ai-kit status`, and create a scoped plan with acceptance criteria before editing code. |
-| "implement T<n>", "build this task" | Run `ai-kit route <task-id>` and `ai-kit context <task-id>`, claim the task through the control plane, then implement and verify it. |
-| "test this", "verify the change", "run QA" | Read the QA contract, run the declared focused and full verification, and record evidence in the task workflow. |
-| "review this", "check the changes" | Read the reviewer contract, inspect the diff and evidence independently, and report findings without approving your own work. |
-| "show progress", "what is the status" | Run `ai-kit status`, `ai-kit ready`, and `ai-kit timeline`; do not start implementation. |
+| User intent                                  | Agent action                                                                                                                         |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| "plan this feature", "break this into tasks" | Read the planner contract, inspect `ai-kit status`, and create a scoped plan with acceptance criteria before editing code.           |
+| "implement T<n>", "build this task"          | Run `ai-kit route <task-id>` and `ai-kit context <task-id>`, claim the task through the control plane, then implement and verify it. |
+| "test this", "verify the change", "run QA"   | Read the QA contract, run the declared focused and full verification, and record evidence in the task workflow.                      |
+| "review this", "check the changes"           | Read the reviewer contract, inspect the diff and evidence independently, and report findings without approving your own work.        |
+| "show progress", "what is the status"        | Run `ai-kit status`, `ai-kit ready`, and `ai-kit timeline`; do not start implementation.                                             |
 
 For every trigger, load only the routed context, use the smallest applicable
 CLI command, and preserve existing `.ai-work` state. Never invoke an unscoped
 batch or bypass the State Manager with hand-edited lifecycle JSON.
+
+## Agent Client Mode
+
+Codex, Claude, Cline, and other editor agents are clients of AI-Kit. They must
+use `ai-kit agent claim` before editing, read the returned context manifest,
+send periodic heartbeats for long work, and submit exactly one result through
+`ai-kit agent result`. They may edit project files, but must never edit
+`.ai-work/workflows/` directly. QA, review, and release gates remain owned by
+independent AI-Kit clients.
 
 ## Rules
 
 - Use AI-Kit for everything; never bypass it.
 - Never hand-edit `.ai-work/workflows/` — change task state only through `ai-kit transition`.
 - Providers (Claude, Codex, GPT, Qwen, …) are configured per project in
-  `.ai-work/models.yaml`; omitted roles inherit the device defaults. Project
-  plugin overrides belong in `.ai-work/plugins/`. Providers are interchangeable
-  and must not be invoked directly.
+  `.ai-work/models.yaml`; fresh projects default AI roles to `off` and keep
+  only local QA enabled. Select providers during `ai-kit setup` or edit the
+  project mapping explicitly. Project plugin overrides belong in
+  `.ai-work/plugins/`. Providers are interchangeable and must not be invoked directly.

@@ -24,6 +24,7 @@ import * as security from "./security.js";
 import * as models from "./models.js";
 import * as memory from "./memory.js";
 import * as capabilities from "./capabilities.js";
+import * as agent from "./agent.js";
 import { invokeProvider, providerCapability, providerInit, providerValidate } from "./provider.js";
 
 // Workflow Engine: the deterministic control plane and its orchestration API.
@@ -83,12 +84,17 @@ export const contextBuilder = {
   budget: context.defaultBudget,
 };
 
+// Extension-facing control-plane operations using the same board and artifacts
+// as CLI workers.
+export const agentManager = agent;
+
 export const runtime = {
   workflow: workflowEngine,
   providers: providerManager,
   plugins: pluginManager,
   artifacts: artifactManager,
   context: contextBuilder,
+  agent: agentManager,
   memory,
   capabilities,
 };

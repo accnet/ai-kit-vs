@@ -32,11 +32,12 @@ Linux or macOS:
 cd /path/to/ai-kit-mcp
 bash install.sh --dry-run
 bash install.sh
-export PATH="$HOME/ai-kit/bin:$PATH"
+source ~/.bashrc
 ai-kit version
 ```
 
-Add the `PATH` export to `~/.bashrc` or `~/.zshrc` for future shells.
+The installer adds `~/ai-kit/bin` to `~/.bashrc` for future Bash shells. Add
+the equivalent export to `~/.zshrc` yourself when using zsh.
 
 Windows PowerShell:
 
@@ -102,8 +103,15 @@ bridge files without deleting the project's workflow state.
 
 Project configuration is kept in `.ai-work/` and can be committed separately
 from disposable workflow state. `project.yaml` declares stack, source
-directories, and verification commands. `models.yaml` overrides provider
-assignments for this project; omitted roles inherit the device defaults.
+directories, and verification commands. Fresh projects default AI providers to
+`off`; select them once during setup, for example:
+
+```bash
+ai-kit setup --planner claude --executor codex --qa local --reviewer codex
+```
+
+The same assignments are stored in `.ai-work/models.yaml`. An `off` role never
+launches a provider CLI and reports an actionable configuration error if invoked.
 Project plugins and security restrictions use `.ai-work/plugins/` and
 `.ai-work/security.yaml`. A project security file can restrict the global
 allowlist but cannot expand it.
@@ -157,6 +165,18 @@ ai-kit-worker start --workflow-id default --role executor
 ai-kit-gate default --once --verify
 ```
 
+Editor agents can use the same control plane without a provider CLI worker:
+
+```bash
+ai-kit agent claim --workflow-id default --client-id codex-extension
+ai-kit agent context --workflow-id default --task-id T1 --client-id codex-extension --attempt-id ATTEMPT
+ai-kit agent result --workflow-id default --task-id T1 --client-id codex-extension --attempt-id ATTEMPT --status pass --summary "implemented"
+```
+
+The returned context and all result artifacts stay under `.ai-work`. Codex,
+Claude, Cline, and other extensions should follow `AGENTS.md` and use these
+commands instead of editing workflow state directly.
+
 Use the state manager for lifecycle transitions. Do not hand-edit workflow
 JSON under `.ai-work/workflows/`.
 
@@ -171,7 +191,8 @@ runtime. `ai-kit setup` also creates:
 - `CLAUDE.md` and `.claude/commands/` for Claude Code
 - `AGENTS.md` and `.codex/config.toml` for Codex-compatible workflows
 
-The launcher directory must be on `PATH` for VS Code shell tasks:
+The installer configures Bash so the launcher directory is on `PATH` for VS
+Code shell tasks:
 
 ```bash
 export PATH="$HOME/ai-kit/bin:$PATH"

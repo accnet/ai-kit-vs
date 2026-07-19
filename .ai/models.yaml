@@ -1,5 +1,4 @@
-planner: codex
-executor: codex
+planner: off
+executor: off
 qa: local
-reviewer: claude
-fallback: any-capable-agent
+reviewer: off

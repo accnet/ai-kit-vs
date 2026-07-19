@@ -7,12 +7,13 @@ state is never stored here.
 ## First Use
 
 ```bash
-export PATH="$HOME/ai-kit/bin:$PATH"
+source ~/.bashrc
 ai-kit version
 ai-kit home
 ```
 
-Persist the `PATH` export in `~/.bashrc` or `~/.zshrc` on Linux/macOS. In
+The Bash installer persists the `PATH` export in `~/.bashrc`. Add the
+equivalent export to `~/.zshrc` yourself when using zsh. In
 PowerShell, add the equivalent `~/ai-kit/bin` directory to the user `Path`.
 
 ## Initialize A Project
@@ -34,11 +35,17 @@ Setup also creates two project configuration files:
 
 ```text
 .ai-work/project.yaml   # stack, source directories, verification commands
-.ai-work/models.yaml    # optional provider overrides
+.ai-work/models.yaml    # provider selection; defaults to off
 ```
 
-Project settings take precedence over device defaults. For example, to use
-Codex for every AI role in one project:
+AI providers are opt-in. A fresh setup disables Claude/Codex and keeps only
+local QA enabled. Select providers once during setup:
+
+```bash
+ai-kit setup --planner claude --executor codex --qa local --reviewer codex
+```
+
+The equivalent project configuration is:
 
 ```yaml
 planner: codex
@@ -46,6 +53,10 @@ executor: codex
 qa: local
 reviewer: codex
 ```
+
+When a role is `off`, AI-Kit refuses to start that provider and reports an
+actionable configuration error. Project settings take precedence over device
+defaults.
 
 Project plugin overrides go under `.ai-work/plugins/`. A project security file
 at `.ai-work/security.yaml` may restrict the device allowlist, but cannot
@@ -96,6 +107,18 @@ ai-kit-worker start --workflow-id default --role executor
 ai-kit-gate default --once --verify
 ```
 
+Editor agents can act as AI-Kit clients without enabling a provider CLI:
+
+```bash
+ai-kit agent claim --workflow-id default --client-id codex-extension
+ai-kit agent context --workflow-id default --task-id T1 --client-id codex-extension --attempt-id ATTEMPT
+ai-kit agent result --workflow-id default --task-id T1 --client-id codex-extension --attempt-id ATTEMPT --status pass --summary "implemented"
+```
+
+`AGENTS.md` directs Codex, Claude, Cline, and other extensions through this
+control-plane surface. Claims, context, evidence, and audit events remain in
+`.ai-work`; extensions must not edit workflow JSON directly.
+
 The state manager owns lifecycle transitions, claims, evidence, and audit
 events. Agents should use the CLI rather than editing JSON directly.
 
@@ -103,7 +126,8 @@ events. Agents should use the CLI rather than editing JSON directly.
 
 The installed VS Code extension uses the global runtime when the project has
 no local `.ai/node`. Open a project after running `ai-kit setup`; the AI-Kit
-view reads the project's `.ai-work` state.
+view reads the project's `.ai-work` state. The Bash installer has already
+configured the launcher directory in `~/.bashrc`.
 
 The generated `.vscode/tasks.json` provides tasks for validation, status, ready
 work, routing, and gates. Ensure the launcher directory is visible to VS Code:

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { configuredPluginId, ModelConfigError, parseModelConfig } from "../.ai/node/models.js";
+import { configuredPluginId, DISABLED_PROVIDER, ModelConfigError, parseModelConfig } from "../.ai/node/models.js";
 
 test("model configuration maps roles to role-compatible plugins", () => {
   const config = parseModelConfig(
@@ -12,6 +12,8 @@ test("model configuration maps roles to role-compatible plugins", () => {
 });
 
 test("model configuration rejects malformed or missing role assignments", () => {
+  assert.equal(parseModelConfig("# defaults\nplanner: off\n").planner, DISABLED_PROVIDER);
+  assert.throws(() => configuredPluginId("planner", "planner: off"), /provider is disabled/);
   assert.throws(() => parseModelConfig("executor: ../codex"), ModelConfigError);
   assert.throws(() => configuredPluginId("reviewer", "fallback: any-capable-agent"), ModelConfigError);
 });

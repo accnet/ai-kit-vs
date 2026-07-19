@@ -5,12 +5,14 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { PROJECT_ROOT, ROOT } from "./engine.js";
+import { PROJECT_ROOT, ROOT, WORK } from "./engine.js";
 
 export const kitPath = () => {
-  const project = [join(PROJECT_ROOT, ".ai-work", "project.yaml"), join(PROJECT_ROOT, ".ai", "kit.yaml")].find((path) =>
-    existsSync(path),
-  );
+  const project = [
+    join(WORK, "project.yaml"),
+    join(PROJECT_ROOT, ".ai-work", "project.yaml"),
+    join(PROJECT_ROOT, ".ai", "kit.yaml"),
+  ].find((path) => existsSync(path));
   return project ?? join(ROOT, ".ai", "kit.yaml");
 };
 
@@ -45,9 +47,11 @@ export function kitArray(key: string, source = readKit()): Set<string> {
 export const testCommand = (source?: string): string | undefined => {
   if (source !== undefined) return kitScalar("test_command", source);
 
-  const projectKit = [join(PROJECT_ROOT, ".ai-work", "project.yaml"), join(PROJECT_ROOT, ".ai", "kit.yaml")].find(
-    (path) => existsSync(path),
-  );
+  const projectKit = [
+    join(WORK, "project.yaml"),
+    join(PROJECT_ROOT, ".ai-work", "project.yaml"),
+    join(PROJECT_ROOT, ".ai", "kit.yaml"),
+  ].find((path) => existsSync(path));
   if (projectKit) return kitScalar("test_command", readFileSync(projectKit, "utf8"));
 
   const packageJson = join(PROJECT_ROOT, "package.json");
