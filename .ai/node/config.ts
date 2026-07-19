@@ -30,15 +30,32 @@ export function kitScalar(key: string, source = readKit()): string | undefined {
 
 // The items of an inline array line `key: [a, b, c]`, or an empty set.
 export function kitArray(key: string, source = readKit()): Set<string> {
-  const match = source.match(new RegExp(`^\\s*${key}:\\s*\\[([^\\]]*)\\]`, "m"));
-  return new Set(
-    match
-      ? match[1]
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean)
-      : [],
-  );
+  const lines = source.split(/\r?\n/);
+  const inline = lines.find((line) => new RegExp(`^\\s*${key}:\\s*\\[([^\\]]*)\\]`).test(line));
+  if (inline) {
+    const match = inline.match(new RegExp(`^\\s*${key}:\\s*\\[([^\\]]*)\\]`));
+    return new Set(
+      (match?.[1] ?? "")
+        .split(",")
+        .map((item) => item.trim().replace(/^['"]|['"]$/g, ""))
+        .filter(Boolean),
+    );
+  }
+
+  const keyLine = lines.find((line) => new RegExp(`^(\\s*)${key}:\\s*$`).test(line));
+  if (!keyLine) return new Set();
+  const keyIndent = keyLine.match(/^(\\s*)/)?.[1].length ?? 0;
+  const values = new Set<string>();
+  const start = lines.indexOf(keyLine) + 1;
+  for (let index = start; index < lines.length; index++) {
+    const line = lines[index];
+    if (!line.trim()) continue;
+    const indent = line.match(/^(\\s*)/)?.[1].length ?? 0;
+    if (indent <= keyIndent) break;
+    const item = line.match(/^\\s*-\\s+(.+?)\\s*(?:#.*)?$/);
+    if (item) values.add(item[1].trim().replace(/^['"]|['"]$/g, ""));
+  }
+  return values;
 }
 
 // A global kit config must not impose its test command on an unrelated

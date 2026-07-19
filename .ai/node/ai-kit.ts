@@ -19,6 +19,7 @@ import {
   save,
   STATE,
   syncPhases,
+  syncWorkflowDocs,
   taskMap,
   transition,
   validate,
@@ -44,7 +45,7 @@ for (let index = 0; index < argv.length; index++) {
     const key = item.slice(2);
     const collected: string[] = [];
     while (argv[index + 1] && !argv[index + 1].startsWith("--")) collected.push(argv[++index]);
-    values.set(key, collected);
+    values.set(key, [...(values.get(key) ?? []), ...collected]);
   }
 }
 const one = (key: string, required = false) => {
@@ -246,6 +247,12 @@ const handlers: Record<string, () => unknown> = {
   },
   "workflow-create": () =>
     createWorkflow(argv[0], one("title", true)!, one("workflow") ?? "feature", one("actor") ?? "planner"),
+  "sync-docs": () => {
+    const state = load<any>(statePath);
+    validate(state);
+    syncWorkflowDocs(state, statePath);
+    return { state: statePath, workspace: workspace(statePath) };
+  },
   workflows: () => loadRegistry().workflows,
   "add-task": () =>
     addTask(statePath, {

@@ -22,6 +22,22 @@ test("kitArray parses an inline array and empties on absence", () => {
   assert.deepEqual([...kitArray("source_dirs", SAMPLE)], []);
 });
 
+test("kitArray parses project YAML block arrays", () => {
+  const source = [
+    "project:",
+    "  stack:",
+    "    - typescript",
+    "    - postgres",
+    "  source_dirs:",
+    "    - src",
+    "    - tests",
+    "verification:",
+    "  test_command: npm test",
+  ].join("\n");
+  assert.deepEqual([...kitArray("stack", source)], ["typescript", "postgres"]);
+  assert.deepEqual([...kitArray("source_dirs", source)], ["src", "tests"]);
+});
+
 test("testCommand reads the shipped kit.yaml", () => {
   // The repo's kit.yaml sets test_command: npm test
   assert.equal(testCommand(), "npm test");

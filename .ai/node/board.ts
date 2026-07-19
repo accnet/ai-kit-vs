@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { isAbsolute, join } from "node:path";
 import * as engine from "./engine.js";
@@ -33,6 +33,26 @@ const taskAt = (taskId: string, workflowId?: string, state?: string) => {
 const expired = (task: engine.Task) => !!task.claim && Date.parse(task.claim.lease_expires_at) <= Date.now();
 const owns = (task: engine.Task, clientId: string, attemptId: string) =>
   !expired(task) && task.claim?.client_id === clientId && task.claim?.attempt_id === attemptId;
+
+function hashSource(path: string): string | null {
+  if (!existsSync(path)) return null;
+  const hash = createHash("sha256");
+  const stat = statSync(path);
+  if (!stat.isDirectory()) return hash.update(readFileSync(path)).digest("hex");
+  const walk = (directory: string, relative = "") => {
+    for (const entry of readdirSync(directory).sort()) {
+      if (entry === ".git" || entry === "node_modules" || entry === "dist") continue;
+      const absolute = join(directory, entry);
+      const childRelative = relative ? join(relative, entry) : entry;
+      const child = statSync(absolute);
+      if (child.isDirectory()) walk(absolute, childRelative);
+      else hash.update(`${childRelative}\0`).update(readFileSync(absolute));
+    }
+  };
+  walk(path);
+  return hash.digest("hex");
+}
+
 function recover(path: string) {
   const state = engine.load<engine.State>(path);
   const items = state.tasks.filter((task) => task.status === "in-progress" && expired(task));
@@ -56,7 +76,7 @@ function manifest(task: engine.Task, attemptId: string, workflowId?: string, sta
       const path = engine.resolveProjectPath(item);
       return {
         path: item,
-        sha256: existsSync(path) ? createHash("sha256").update(readFileSync(path)).digest("hex") : null,
+        sha256: hashSource(path),
       };
     });
   const git = spawnSync("git", ["status", "--short"], { cwd: engine.PROJECT_ROOT, encoding: "utf8" });

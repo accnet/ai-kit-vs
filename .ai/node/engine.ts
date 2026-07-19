@@ -187,7 +187,7 @@ export function configuredStack() {
   return kitArray("stack");
 }
 export function routeTask(task: Task, statePath: string) {
-  const stack = new Set([...configuredStack(), ...(task.tags ?? [])]),
+  const stack = configuredStack(),
     skills: string[] = [],
     skillRoot = join(ROOT, ".ai", "skills");
   for (const domain of ROLE_DOMAINS[task.owner] ?? []) {
@@ -197,7 +197,7 @@ export function routeTask(task: Task, statePath: string) {
       .filter((item) => item.isDirectory())
       .sort((a, b) => a.name.localeCompare(b.name))) {
       const overview = join(directory, entry.name, "overview.md");
-      if (existsSync(overview) && (stack.has(entry.name) || stack.has(domain))) skills.push(displayPath(overview));
+      if (existsSync(overview) && stack.has(entry.name)) skills.push(displayPath(overview));
     }
   }
   for (const name of CORE_BY_ROLE[task.owner] ?? ["skill-router"]) {
@@ -329,6 +329,39 @@ function writeCurrent(state: State, path: string) {
 export function save(state: State, path: string, expected?: number) {
   saveJson(state, path, expected);
   writeCurrent(state, path);
+  syncWorkflowDocs(state, path);
+}
+
+function markdownText(value: string) {
+  return value.replaceAll("|", "\\|").replaceAll("\n", " ").trim();
+}
+
+export function syncWorkflowDocs(state: State, path: string) {
+  if (!managedState(path)) return;
+  const root = workspace(path);
+  mkdirSync(join(root, "plan"), { recursive: true });
+  mkdirSync(join(root, "roadmap"), { recursive: true });
+  mkdirSync(join(root, "tasks"), { recursive: true });
+  const phases = state.phases.map((phase) => `- ${phase.id}: ${phase.status} (${phase.tasks.join(", ")})`).join("\n");
+  const tasks = state.tasks
+    .map(
+      (task) =>
+        `- [${task.status === "done" ? "x" : " "}] ${task.id} ${markdownText(task.title)} | owner: ${task.owner} | phase: ${task.phase} | status: ${task.status} | needs: ${task.needs.join(", ") || "-"} | files: ${task.files.join(", ") || "-"}\n` +
+        task.acceptance.map((criterion) => `  - Accept: ${markdownText(criterion)}`).join("\n"),
+    )
+    .join("\n");
+  writeFileSync(
+    join(root, "plan", "plan.md"),
+    `# Plan: ${state.title}\n\nGoal: ${state.title}\nWorkflow: ${state.workflow}\n\n## Phases\n${phases || "- pending task creation"}\n\nVerification: each task must pass implementation, QA, independent review, and gate closure.\n`,
+  );
+  writeFileSync(
+    join(root, "roadmap", "roadmap.md"),
+    `# Roadmap\n\n## Now\n- ${state.title}\n\n## Phases\n${phases || "- pending task creation"}\n\n## Later\n- Revisit scope after MVP evidence.\n`,
+  );
+  writeFileSync(
+    join(root, "tasks", "tasks.md"),
+    `# Tasks - ${state.title}\n\nIntent: ${state.workflow}\nGoal: ${state.title}\nOut of scope: see task acceptance criteria and architecture docs.\n\n## Tasks\n${tasks || "- [ ] No tasks created yet."}\n`,
+  );
 }
 export const loadRegistry = () =>
   existsSync(REGISTRY) ? load<any>(REGISTRY) : { version: 1, revision: 0, workflows: [] };

@@ -58,6 +58,7 @@ export function assembleContext(sources: string[], budget = defaultBudget()): As
       const absolute = resolveProjectPath(path);
       return { path, tokens: existsSync(absolute) ? estimateTokens(bytesOf(absolute)) : 0, rank: priority(path) };
     })
+    .filter((source) => existsSync(resolveProjectPath(source.path)))
     .sort((a, b) => a.rank - b.rank || a.path.localeCompare(b.path));
 
   const included: { path: string; tokens: number }[] = [];

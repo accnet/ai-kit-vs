@@ -128,3 +128,11 @@ test("Node router returns scoped core knowledge and state context", () => {
   assert.ok(route.skills.includes(".ai/skills/core/api-contract/SKILL.md"));
   assert.ok(route.context.includes(".ai/engine/state-schema.md"));
 });
+
+test("Node router does not treat task tags as project stack selection", () => {
+  const task: any = { id: "T1", owner: "backend", tags: ["backend", "database"], files: [] };
+  const route = routeTask(task, join(tmpdir(), "aikit-routing-tags", "state", "workflow.json"));
+  assert.ok(route.skills.includes(".ai/skills/core/api-contract/SKILL.md"));
+  assert.ok(!route.skills.includes(".ai/skills/backend/laravel/overview.md"));
+  assert.ok(!route.skills.includes(".ai/skills/database/mysql/overview.md"));
+});

@@ -11,7 +11,7 @@ test("estimateTokens is ~4 bytes per token", () => {
 test("assembleContext ranks contract > role > plan > core skill > domain skill > file", () => {
   const sources = [
     ".ai-work/workflows/default/tasks/tasks.md",
-    "src/app.ts",
+    ".ai/kit.yaml",
     ".ai/skills/backend/nestjs-core/overview.md",
     ".ai/agents/backend",
     ".ai/engine/state-schema.md",
@@ -25,7 +25,7 @@ test("assembleContext ranks contract > role > plan > core skill > domain skill >
     order.indexOf(".ai/skills/core/api-contract/SKILL.md") <
       order.indexOf(".ai/skills/backend/nestjs-core/overview.md"),
   );
-  assert.equal(order.at(-1), "src/app.ts", "task file ranks last");
+  assert.equal(order.at(-1), ".ai/kit.yaml", "task file ranks last");
 });
 
 test("assembleContext enforces the token budget but always keeps the top source", () => {
@@ -41,4 +41,11 @@ test("assembleContext reports real token totals for shipped files", () => {
   const ctx = assembleContext([".ai/engine/state-schema.md"], 10_000_000);
   assert.ok(ctx.total_tokens > 0, "state-schema.md should have a nonzero token estimate");
   assert.equal(ctx.included[0].tokens, ctx.total_tokens);
+});
+
+test("assembleContext excludes missing sources instead of loading zero-token entries", () => {
+  const missing = "src/does-not-exist-for-context-test.ts";
+  const ctx = assembleContext([".ai/engine/state-schema.md", missing], 10_000_000);
+  assert.ok(!ctx.included.some((source) => source.path === missing));
+  assert.ok(!ctx.skipped.some((source) => source.path === missing));
 });

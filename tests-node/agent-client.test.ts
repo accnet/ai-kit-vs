@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import * as agent from "../.ai/node/agent.js";
 import * as board from "../.ai/node/board.js";
+import { workspace, workflowStatePath } from "../.ai/node/engine.js";
 
 test("agent client claims, loads context, submits evidence, and preserves gates", () => {
   const workflowId = `agent-client-${Date.now().toString(36)}`;
@@ -14,13 +15,20 @@ test("agent client claims, loads context, submits evidence, and preserves gates"
     owner: "backend",
     phase: "build",
     acceptance: ["works"],
-    files: ["package.json"],
+    files: ["tests-node"],
   });
+  const workflowRoot = workspace(workflowStatePath(workflowId));
+  assert.match(readFileSync(`${workflowRoot}/plan/plan.md`, "utf8"), /Agent client/);
+  assert.match(readFileSync(`${workflowRoot}/tasks/tasks.md`, "utf8"), /T1 build/);
 
   const claim: any = agent.claim(workflowId, "codex-extension");
   assert.equal(claim.claimed, "T1");
   assert.ok(claim.assignment);
   assert.equal(JSON.parse(readFileSync(claim.assignment, "utf8")).kind, "assignment");
+  const manifest = JSON.parse(readFileSync(claim.context_manifest, "utf8")) as {
+    sources: { path: string; sha256: string | null }[];
+  };
+  assert.ok(manifest.sources.some((source) => source.path === "tests-node" && source.sha256));
   assert.equal(agent.context(workflowId, "T1", "codex-extension", claim.claim.attempt_id).task, "T1");
 
   agent.heartbeat(workflowId, "T1", "codex-extension", claim.claim.attempt_id);

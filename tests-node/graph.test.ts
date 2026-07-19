@@ -40,3 +40,56 @@ test("graph escapes quotes and backslashes so DOT stays valid", () => {
   // No raw unescaped quote sequence that would break Graphviz parsing.
   assert.ok(!/said "hi"/.test(dot), "label contains an unescaped quote");
 });
+
+test("CLI preserves repeated list options", () => {
+  const work = mkdtempSync(join(tmpdir(), "aikit-cli-options-"));
+  const state = join(work, "workflow.json");
+  assert.equal(run(state, ["init", "--title", "Demo", "--workflow", "feature"]).status, 0);
+  for (const id of ["T0", "T-1"]) {
+    const dependency = run(state, [
+      "add-task",
+      id,
+      "--title",
+      id,
+      "--owner",
+      "backend",
+      "--phase",
+      "build",
+      "--acceptance",
+      "done",
+    ]);
+    assert.equal(dependency.status, 0, dependency.stderr);
+  }
+  const add = run(state, [
+    "add-task",
+    "T1",
+    "--title",
+    "multi-value task",
+    "--owner",
+    "backend",
+    "--phase",
+    "build",
+    "--acceptance",
+    "first criterion",
+    "--acceptance",
+    "second criterion",
+    "--needs",
+    "T0",
+    "--needs",
+    "T-1",
+    "--files",
+    "src/one.ts",
+    "--files",
+    "src/two.ts",
+    "--tags",
+    "api",
+    "--tags",
+    "security",
+  ]);
+  assert.equal(add.status, 0, add.stderr);
+  const task = JSON.parse(add.stdout) as { acceptance: string[]; needs: string[]; files: string[]; tags: string[] };
+  assert.deepEqual(task.acceptance, ["first criterion", "second criterion"]);
+  assert.deepEqual(task.needs, ["T0", "T-1"]);
+  assert.deepEqual(task.files, ["src/one.ts", "src/two.ts"]);
+  assert.deepEqual(task.tags, ["api", "security"]);
+});
