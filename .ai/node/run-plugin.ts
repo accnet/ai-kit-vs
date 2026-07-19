@@ -39,7 +39,16 @@ function taskFor(role: PluginRole, workflow: string, actor: string) {
   const pending = board.pendingReview(workflow);
   const item = role === "qa" ? pending.awaiting_qa[0] : role === "reviewer" ? pending.awaiting_review[0] : undefined;
   return item
-    ? { claimed: item.id, title: item.title, owner: item.owner }
+    ? {
+        claimed: item.id,
+        title: item.title,
+        owner: item.owner,
+        acceptance: item.acceptance,
+        files: item.files,
+        evidence: item.evidence,
+        implementation_client: item.implementation_client,
+        implementation_attempt: item.implementation_attempt,
+      }
     : { claimed: null, reason: "no pending work" };
 }
 
@@ -51,6 +60,7 @@ function prompt(role: PluginRole, input: string, output: string) {
     `Perform only the assigned role work.`,
     "For QA or review, inspect the assignment acceptance criteria, changed files, and evidence paths before deciding.",
     `Write exactly one valid ${artifactForRole[role]} JSON artifact to ${output}.`,
+    "Make the final response exactly the same JSON object, with no markdown fences or commentary.",
     "Do not modify workflow state or communicate with other agents.",
   ].join("\n");
 }

@@ -24,7 +24,18 @@ test("project configuration overrides models, verification, plugins, and securit
       id: "codex",
       role: "reviewer",
       transport: "cli",
-      command: ["codex", "exec", "--skip-git-repo-check", "--sandbox", "workspace-write", "{prompt}"],
+      command: [
+        "codex",
+        "exec",
+        "--skip-git-repo-check",
+        "--sandbox",
+        "read-only",
+        "-c",
+        "model_reasoning_effort=low",
+        "--output-last-message",
+        "{output}",
+        "{prompt}",
+      ],
     }),
   );
   const probe = join(project, "probe.ts");
@@ -54,7 +65,11 @@ console.log(JSON.stringify({ test: testCommand(), reviewer: configuredPluginId("
     "exec",
     "--skip-git-repo-check",
     "--sandbox",
-    "workspace-write",
+    "read-only",
+    "-c",
+    "model_reasoning_effort=low",
+    "--output-last-message",
+    "{output}",
     "{prompt}",
   ]);
   assert.deepEqual(output.allowed, ["codex"]);

@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -97,6 +97,13 @@ test("runtime drives planner -> executor -> qa -> reviewer -> close as one chain
       engine.taskMap(engine.load<engine.State>(engine.workflowStatePath(wf))).get("T1")?.status,
       "review-approved",
     );
+    const reviewAssignment = JSON.parse(
+      readFileSync(
+        join(engine.workspace(engine.workflowStatePath(wf)), "artifacts/assignment/reviewer-T1.json"),
+        "utf8",
+      ),
+    );
+    assert.deepEqual(reviewAssignment.input.acceptance, ["works"]);
 
     // 5) Close.
     board.close(wf, "T1", "closer");

@@ -3,6 +3,17 @@
   "id": "codex",
   "role": "reviewer",
   "transport": "cli",
-  "command": ["codex", "exec", "--skip-git-repo-check", "--sandbox", "workspace-write", "{prompt}"],
+  "command": [
+    "codex",
+    "exec",
+    "--skip-git-repo-check",
+    "--sandbox",
+    "read-only",
+    "-c",
+    "model_reasoning_effort=low",
+    "--output-last-message",
+    "{output}",
+    "{prompt}"
+  ],
   "description": "Codex CLI reviewer adapter."
 }
