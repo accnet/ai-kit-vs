@@ -91,6 +91,10 @@ illegal transitions, missing acceptance criteria, and ambiguous task ownership.
 The Planner, Executor, Reviewer, and QA are workers operating through that
 control plane; no worker may bypass a gate by directly changing lifecycle state.
 
+When multiple agents have active claims in different workflows, `current.json`
+keeps a merged `active_workflows` map. Unscoped status/read commands fail rather
+than selecting one workflow arbitrarily; use the explicit workflow state path.
+
 No silent completion: a task is NEVER complete just because code compiles. You
 MUST submit through `ai-kit agent result` before reporting implementation work
 as done; QA, independent review, and gate closure still have to pass.

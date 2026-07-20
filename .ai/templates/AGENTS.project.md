@@ -87,7 +87,9 @@ Use the following intent map instead of asking the user to run a batch command:
 For every trigger, load only the routed context, use the smallest applicable
 CLI command, and preserve existing `.ai-work` state. Status and read commands
 follow the active workflow pointer; use `--state <path>` when an explicit
-workflow is required. Never invoke an unscoped
+workflow is required. When multiple agents have active claims in different
+workflows, unscoped status/read commands fail intentionally; use each workflow's
+explicit `--state` path. Never invoke an unscoped
 batch or bypass the State Manager with hand-edited lifecycle JSON.
 
 ## Agent Client Mode

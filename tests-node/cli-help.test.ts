@@ -102,7 +102,9 @@ test("status follows the active workflow pointer instead of always using default
     assert.equal(result.status, 0, result.stderr);
     result = run(project, ["status"]);
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(JSON.parse(result.stdout).title, "Crawl workflow");
+    const status = JSON.parse(result.stdout);
+    assert.equal(status.title, "Crawl workflow");
+    assert.deepEqual(status.warnings, []);
   } finally {
     rmSync(project, { recursive: true, force: true });
   }

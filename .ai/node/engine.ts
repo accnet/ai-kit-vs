@@ -13,7 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { hostname } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { kitArray } from "./config.js";
 
 // The kit root. Defaults to this file's grandparent, but AIKIT_ROOT lets the
@@ -162,17 +162,23 @@ export function assertWorkProject() {
 export function currentWorkflowStatePath(fallback = STATE) {
   if (!existsSync(CURRENT)) return fallback;
   try {
-    const current = JSON.parse(readFileSync(CURRENT, "utf8")) as { workflow_state?: string };
-    if (!current.workflow_state) return fallback;
-    if (isAbsolute(current.workflow_state)) return resolve(current.workflow_state);
-    const candidates = [
-      join(PROJECT_ROOT, current.workflow_state),
-      join(WORK, current.workflow_state),
-      join(ROOT, current.workflow_state),
-    ];
+    const current = JSON.parse(readFileSync(CURRENT, "utf8")) as {
+      workflow_state?: string;
+      active_workflows?: Record<string, { workflow_state?: string }>;
+    };
+    const active = Object.entries(current.active_workflows ?? {}).filter(([, item]) => !!item?.workflow_state);
+    if (active.length > 1)
+      throw new EngineError(
+        `multiple active workflows in current.json: ${active.map(([id]) => id).join(", ")}; use --state <path> or an explicit --workflow-id`,
+      );
+    const selected = active[0]?.[1].workflow_state ?? current.workflow_state;
+    if (!selected) return fallback;
+    if (isAbsolute(selected)) return resolve(selected);
+    const candidates = [join(PROJECT_ROOT, selected), join(WORK, selected), join(ROOT, selected)];
     return candidates.find((path) => existsSync(path)) ?? fallback;
-  } catch {
-    return fallback;
+  } catch (error) {
+    if (error instanceof EngineError) throw error;
+    throw new EngineError(`invalid AI-Kit current workflow pointer: ${CURRENT}`);
   }
 }
 export function bindWorkProject() {
@@ -391,18 +397,41 @@ function managedState(path: string) {
 }
 function writeCurrent(state: State, path: string) {
   if (!managedState(path)) return;
-  const lock = `${CURRENT}.lock`,
-    payload = {
-      version: 1,
+  const lock = `${CURRENT}.lock`;
+  acquire(lock);
+  try {
+    let current: Record<string, any> = {};
+    if (existsSync(CURRENT)) {
+      try {
+        current = JSON.parse(readFileSync(CURRENT, "utf8"));
+      } catch {
+        throw new EngineError(`invalid AI-Kit current workflow pointer: ${CURRENT}`);
+      }
+    }
+    const relativeState = relative(WORK, resolve(path)).split(sep),
+      workflowId = relativeState[0] === "workflows" ? relativeState[1] : displayPath(path),
+      activeWorkflows = { ...(current.active_workflows ?? {}) } as Record<string, any>,
+      activeTasks = state.tasks.filter((task) => task.status === "in-progress").map((task) => task.id);
+    if (activeTasks.length)
+      activeWorkflows[workflowId] = {
+        workflow_state: displayPath(path),
+        title: state.title,
+        workflow: state.workflow,
+        active_tasks: activeTasks,
+        updated_at: now(),
+      };
+    else delete activeWorkflows[workflowId];
+    const payload = {
+      ...current,
+      version: 2,
       project_root: PROJECT_ROOT,
       workflow_state: displayPath(path),
       title: state.title,
       workflow: state.workflow,
-      active_tasks: state.tasks.filter((task) => task.status === "in-progress").map((task) => task.id),
+      active_tasks: activeTasks,
+      active_workflows: activeWorkflows,
       updated_at: now(),
     };
-  acquire(lock);
-  try {
     mkdirSync(dirname(CURRENT), { recursive: true });
     const temporary = `${CURRENT}.tmp`;
     writeFileSync(temporary, `${JSON.stringify(payload, null, 2)}\n`);

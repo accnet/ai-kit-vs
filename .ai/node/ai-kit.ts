@@ -144,6 +144,7 @@ Options:
   status: `Usage: ai-kit status
 
 Shows workflow status, task counts, and phases.
+When multiple workflows have active claims, pass --state <path> before status.
 
 Options:
   -h, --help           Show this help`,
