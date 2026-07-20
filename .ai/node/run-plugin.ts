@@ -118,6 +118,9 @@ export async function runOnce(role: PluginRole, id: string, workflow: string, ac
     prompt: prompt(role, input, output),
     onHeartbeat,
     heartbeatMs: onHeartbeat ? HEARTBEAT_MS : undefined,
+    // Worker log files (and a terminal tailing one) should show the provider
+    // working live, not just the outcome once it finishes.
+    stream: true,
   });
   if (!run.ok) {
     const detail = `${run.outcome} after ${run.attempts} attempt(s): ${run.error ?? "unknown"}`;

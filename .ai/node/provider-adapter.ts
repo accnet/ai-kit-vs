@@ -54,6 +54,10 @@ export type InvokeOptions = {
   // Called periodically while a provider runs, so a long job can renew its lease.
   onHeartbeat?: () => void;
   heartbeatMs?: number;
+  // Echo the provider's stdout/stderr to this process's own streams as it
+  // arrives (in addition to the buffering below), so a worker's log file — or
+  // a terminal tailing it — shows the provider working in real time.
+  stream?: boolean;
 };
 
 // The minimal process outcome the classifier reasons about.
@@ -109,6 +113,7 @@ function runProcess(
   env: NodeJS.ProcessEnv | undefined,
   onHeartbeat?: () => void,
   heartbeatMs?: number,
+  stream?: boolean,
 ): Promise<RunResult> {
   return new Promise((resolve) => {
     const launch = launchSpec(command);
@@ -138,8 +143,14 @@ function runProcess(
             }
           }, heartbeatMs)
         : undefined;
-    child.stdout?.on("data", (chunk) => (stdout += chunk));
-    child.stderr?.on("data", (chunk) => (stderr += chunk));
+    child.stdout?.on("data", (chunk) => {
+      stdout += chunk;
+      if (stream) process.stdout.write(chunk);
+    });
+    child.stderr?.on("data", (chunk) => {
+      stderr += chunk;
+      if (stream) process.stderr.write(chunk);
+    });
     const finish = (result: RunResult) => {
       if (settled) return;
       settled = true;
@@ -205,7 +216,15 @@ export async function invokeProvider(plugin: Plugin, options: InvokeOptions): Pr
     attempts = attempt;
     // Clear any stale artifact so `no-output` reflects this attempt only.
     if (existsSync(options.output)) rmSync(options.output, { force: true });
-    run = await runProcess(command, cwd, timeoutMs, options.env, options.onHeartbeat, options.heartbeatMs);
+    run = await runProcess(
+      command,
+      cwd,
+      timeoutMs,
+      options.env,
+      options.onHeartbeat,
+      options.heartbeatMs,
+      options.stream,
+    );
     outcome = classify(run, options.output);
     if (outcome === "ok" || !RETRYABLE.has(outcome)) break;
     if (attempt < maxAttempts) await delay(RETRY_BACKOFF_MS * attempt);

@@ -6,7 +6,7 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
 import * as vscode from "vscode";
-import { resolveRuntime, type RuntimeCli } from "./runtime.js";
+import { resolveRuntime, tailLogCommand, terminalNameFor, workerLogPath, type RuntimeCli } from "./runtime.js";
 
 function workspaceRoot(): string | undefined {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -188,19 +188,45 @@ export function activate(context: vscode.ExtensionContext): void {
   }
 
   // Control commands that drive providers (require a registered workflow id).
-  const run = async (cli: string, args: string[]) => {
+  // Returns the CLI's raw stdout on success so a caller (e.g. startRole) can
+  // read fields like `log` out of it; undefined on any failure.
+  const run = async (cli: string, args: string[]): Promise<string | undefined> => {
     const cwd = workspaceRoot();
-    if (!cwd) return void vscode.window.showErrorMessage("AI-Kit: open a workspace folder first.");
+    if (!cwd) {
+      vscode.window.showErrorMessage("AI-Kit: open a workspace folder first.");
+      return undefined;
+    }
     try {
-      await runCli(cli, args, cwd);
+      const stdout = await runCli(cli, args, cwd);
       tree.refresh();
+      return stdout;
     } catch (error) {
       vscode.window.showErrorMessage(`AI-Kit: ${(error as Error).message}`);
+      return undefined;
     }
+  };
+  // Open (or reuse) a terminal tailing the worker's log so its provider
+  // (Codex, Claude, ...) is visible working in real time, not just its outcome.
+  const openWorkerTerminal = (cwd: string, workerId: string, logPath: string) => {
+    const name = terminalNameFor(workerId);
+    const terminal =
+      vscode.window.terminals.find((item) => item.name === name) ?? vscode.window.createTerminal({ name, cwd });
+    terminal.sendText(tailLogCommand(logPath));
+    terminal.show(true);
   };
   const startRole = (role: string) => async () => {
     const id = await askWorkflowId();
-    if (id) await run("ai-kit:worker", ["start", "--workflow-id", id, "--role", role]);
+    if (!id) return;
+    const stdout = await run("ai-kit:worker", ["start", "--workflow-id", id, "--role", role]);
+    const cwd = workspaceRoot();
+    if (!stdout || !cwd) return;
+    try {
+      const started = JSON.parse(stdout) as { id?: string };
+      const logPath = workerLogPath(started);
+      if (started.id && logPath) openWorkerTerminal(cwd, started.id, logPath);
+    } catch {
+      /* malformed worker-start output: no terminal, run() already reported the outcome */
+    }
   };
   context.subscriptions.push(
     vscode.commands.registerCommand("aiKit.startExecutor", startRole("executor")),

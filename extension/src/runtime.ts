@@ -15,6 +15,29 @@ function expandHome(value: string): string {
   return value.replace(/^~(?=$|[\\/])/, homedir());
 }
 
+// Named so a second worker gets its own terminal instead of reusing one that
+// is already tailing a different worker's log.
+export function terminalNameFor(workerId: string): string {
+  return `AI-Kit: ${workerId}`;
+}
+
+// `tail -f` on the worker's log file, so a terminal running this command shows
+// the provider (Codex, Claude, ...) working in real time. Double-quoted with
+// JSON.stringify so a path containing spaces still parses as one argument;
+// worker log paths are runtime-generated, never adversarial input.
+export function tailLogCommand(logPath: string): string {
+  return `tail -f ${JSON.stringify(logPath)}`;
+}
+
+// The worker JSON printed by `ai-kit:worker start` (see worker-manager.ts)
+// always includes a `log` field. Returns undefined for anything else so a
+// malformed or unexpected response degrades to "no terminal", not a crash.
+export function workerLogPath(startOutput: unknown): string | undefined {
+  if (typeof startOutput !== "object" || startOutput === null) return undefined;
+  const log = (startOutput as { log?: unknown }).log;
+  return typeof log === "string" && log.length > 0 ? log : undefined;
+}
+
 export function resolveRuntime(
   cwd: string,
   cli: string,
