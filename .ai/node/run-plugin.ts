@@ -1,3 +1,5 @@
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as board from "./board.js";
 import { artifactPath, readArtifact, writeArtifact, type ArtifactKind, type PluginRole } from "./artifacts.js";
@@ -6,6 +8,47 @@ import { loadPlugin } from "./plugins.js";
 import { invokeProvider } from "./provider-adapter.js";
 import { markWorker, stopRequested } from "./worker-manager.js";
 import * as engine from "./engine.js";
+
+// Reads one context-manifest source (a file, or a role-contract directory of
+// .md files, same convention as context.ts's byte-size estimate) as text.
+function readSource(relativePath: string): string | undefined {
+  const absolute = engine.resolveProjectPath(relativePath);
+  try {
+    if (!statSync(absolute).isDirectory()) return readFileSync(absolute, "utf8");
+    return readdirSync(absolute)
+      .filter((entry) => entry.endsWith(".md"))
+      .sort()
+      .map((entry) => `## ${entry}\n${readFileSync(join(absolute, entry), "utf8")}`)
+      .join("\n\n");
+  } catch {
+    return undefined;
+  }
+}
+
+// Inline the manifest's already-selected sources directly into the prompt, so
+// the provider does not have to spend a separate tool call re-reading each one
+// (role contract, skills, plan/tasks/roadmap) that ai-kit already picked.
+function inlinedContext(manifestPath: string | undefined): string {
+  if (!manifestPath || !existsSync(manifestPath)) return "";
+  let included: { path: string }[];
+  try {
+    included = JSON.parse(readFileSync(manifestPath, "utf8"))?.context?.included ?? [];
+  } catch {
+    return "";
+  }
+  const sections = included
+    .map(({ path }) => {
+      const text = readSource(path);
+      return text ? `--- ${path} ---\n${text.trim()}` : undefined;
+    })
+    .filter((section): section is string => !!section);
+  if (!sections.length) return "";
+  return [
+    "",
+    "The following context sources are already loaded below — do not spend a tool call re-reading them:",
+    ...sections,
+  ].join("\n\n");
+}
 
 const argv = process.argv.slice(2);
 const role = argv.shift() as PluginRole;
@@ -53,7 +96,7 @@ function taskFor(role: PluginRole, workflow: string, actor: string) {
     : { claimed: null, reason: "no pending work" };
 }
 
-export function prompt(role: PluginRole, input: string, output: string) {
+export function prompt(role: PluginRole, input: string, output: string, contextManifestPath?: string) {
   const artifactContract =
     role === "planner"
       ? `The plan JSON must use exactly these fields: version, kind="plan", workflow_id, actor, goal, and tasks. Each task must use id, title, owner, phase, needs, acceptance, files, and tags. Task owner must be one of these agent roles: ${[...engine.roleNames()].join(", ")}. Never use generic owner names such as executor or implementer.`
@@ -64,10 +107,13 @@ export function prompt(role: PluginRole, input: string, output: string) {
           : role === "qa"
             ? 'The QA JSON must use exactly these fields: version, kind="qa", workflow_id, actor, task, status, summary, commands. status must be exactly "pass" or "fail".'
             : undefined;
+  const context = inlinedContext(contextManifestPath);
   return [
     `You are the ${role} plugin for AI-Kit.`,
     `Read the JSON assignment at ${input}.`,
-    "When the assignment input has a context_manifest, read that JSON and load only the sources listed under its `context.included` — a ranked, token-budgeted selection. You do not need the other sources.",
+    context
+      ? "The assignment's context_manifest sources (role contract, skills, plan/tasks/roadmap) are inlined below — do not re-read them; only use file tools for the project source files you need to inspect or change."
+      : "When the assignment input has a context_manifest, read that JSON and load only the sources listed under its `context.included` — a ranked, token-budgeted selection. You do not need the other sources.",
     `Perform only the assigned role work.`,
     "For QA or review, inspect the assignment acceptance criteria, changed files, and evidence paths before deciding.",
     `Write exactly one valid ${artifactForRole[role]} JSON artifact to ${output}.`,
@@ -75,7 +121,10 @@ export function prompt(role: PluginRole, input: string, output: string) {
     "Make the final response exactly the same JSON object, with no markdown fences or commentary.",
     "The provider wrapper writes the final response to the output artifact path. Do not use file tools to create or edit that artifact path; use file tools only for assigned project files.",
     "Do not modify workflow state or communicate with other agents.",
-  ].join("\n");
+    context,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 const configuredLease = Number(process.env.AIKIT_LEASE_SECONDS ?? "900");
@@ -115,7 +164,7 @@ export async function runOnce(role: PluginRole, id: string, workflow: string, ac
   const run = await invokeProvider(plugin, {
     input,
     output,
-    prompt: prompt(role, input, output),
+    prompt: prompt(role, input, output, claimed.context_manifest),
     onHeartbeat,
     heartbeatMs: onHeartbeat ? HEARTBEAT_MS : undefined,
     // Worker log files (and a terminal tailing one) should show the provider

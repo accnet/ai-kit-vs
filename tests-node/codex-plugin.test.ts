@@ -1,5 +1,6 @@
 import { strict as assert } from "node:assert";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -60,4 +61,27 @@ test("planner prompt names the strict plan artifact schema", () => {
   assert.match(value, /kind="plan"/);
   assert.match(value, /Each task must use id, title, owner, phase, needs, acceptance, files, and tags/);
   assert.match(value, /Never use generic owner names such as executor or implementer/);
+});
+
+test("prompt inlines the context manifest's already-selected sources instead of pointing at files to re-read", () => {
+  const directory = mkdtempSync(join(tmpdir(), "aikit-prompt-context-"));
+  try {
+    const planDoc = join(directory, "plan.md");
+    writeFileSync(planDoc, "# Plan\n\nBuild the thing.");
+    const manifestPath = join(directory, "manifest.json");
+    writeFileSync(manifestPath, JSON.stringify({ context: { included: [{ path: planDoc, tokens: 10 }] } }));
+
+    const value = prompt("executor", "/tmp/assignment.json", "/tmp/result.json", manifestPath);
+    assert.match(value, /do not re-read them/);
+    assert.match(value, new RegExp(`--- ${planDoc.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} ---`));
+    assert.match(value, /Build the thing\./);
+    assert.doesNotMatch(value, /load only the sources listed under its/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("prompt falls back to pointing at the context manifest when none is inlined", () => {
+  const value = prompt("executor", "/tmp/assignment.json", "/tmp/result.json");
+  assert.match(value, /load only the sources listed under its `context.included`/);
 });
