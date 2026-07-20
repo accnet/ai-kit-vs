@@ -240,6 +240,19 @@ Common options:
   --summary <text>     Evidence summary for result or QA
   --verdict <value>    approve or changes-requested for review
   -h, --help           Show this help`,
+  copilot: `Usage: ai-kit copilot finish [options]
+
+Submits the active Copilot claim as implementation evidence.
+
+Options:
+  --workflow-id <id>   Workflow to finish (auto-discovered when omitted)
+  --client-id <id>     Client id (default: copilot-extension)
+  --summary <text>     Implementation summary
+  --status <status>    pass or fail (default: pass)
+  --changed-path <p>   Changed path (repeatable)
+  --command <command>  Verification command (repeatable)
+  --branch <name>      Implementation branch
+  -h, --help           Show this help`,
   roles: `Usage: ai-kit roles
 
 Lists valid task owner roles and provider roles.
@@ -265,6 +278,7 @@ function topHelp(): string {
     "route",
     "context",
     "agent",
+    "copilot",
     "memory",
     "lock",
     "verify-lock",
@@ -671,6 +685,21 @@ const handlers: Record<string, () => unknown> = {
     throw new EngineError(
       "usage: agent <claim|context|heartbeat|result|qa|review> --workflow-id ID --client-id ID [options]",
     );
+  },
+  copilot: () => {
+    const sub = argv.shift();
+    if (sub !== "finish") throw new EngineError("usage: copilot finish [options]");
+    const status = one("status") ?? "pass";
+    if (status !== "pass" && status !== "fail") throw new EngineError("--status must be pass or fail");
+    return runtime.agent.finish({
+      workflowId: one("workflow-id"),
+      clientId: one("client-id") ?? "copilot-extension",
+      summary: one("summary"),
+      status: status as "pass" | "fail",
+      changedPaths: many("changed-path"),
+      commands: many("command"),
+      branch: one("branch"),
+    });
   },
   bundle: () => {
     const path = workflowState();

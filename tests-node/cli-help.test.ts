@@ -29,6 +29,7 @@ test("CLI help exits successfully before validation or side effects", () => {
       { args: ["setup", "--help"], marker: "Usage: ai-kit setup" },
       { args: ["lock", "--help"], marker: "Usage: ai-kit lock" },
       { args: ["status", "--help"], marker: "Usage: ai-kit status" },
+      { args: ["copilot", "finish", "--help"], marker: "Usage: ai-kit copilot finish" },
       { args: ["events", "--help"], marker: "--after-cursor <n>" },
       { args: ["watch", "--help"], marker: "newline-delimited" },
       { args: ["memory", "add", "--help"], marker: "Usage: ai-kit memory add" },

@@ -147,6 +147,10 @@ export function microTaskPolicy(source = readKit()): MicroTaskPolicy {
   };
 }
 
+export function closeAfterQaPolicy(source = readKit()) {
+  return booleanValue(nestedScalar(["workflow", "close_after_qa"], source), false);
+}
+
 // A global kit config must not impose its test command on an unrelated
 // project. Projects opt in through their own `.ai/kit.yaml`, or through an
 // npm package that declares a test script.

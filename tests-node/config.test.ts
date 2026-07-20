@@ -5,7 +5,14 @@ import { test } from "node:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { kitArray, kitScalar, microTaskPolicy, testCommand, verificationCommands } from "../.ai/node/config.js";
+import {
+  closeAfterQaPolicy,
+  kitArray,
+  kitScalar,
+  microTaskPolicy,
+  testCommand,
+  verificationCommands,
+} from "../.ai/node/config.js";
 
 const SAMPLE = ["kit:", "  id: ai-kit", "  test_command: npm run test:ci", "project:", "  stack: [node, php]"].join(
   "\n",
@@ -49,6 +56,12 @@ test("microTaskPolicy parses nested project policy and keeps bounded defaults", 
   ].join("\n");
   assert.deepEqual(microTaskPolicy(source), { enabled: true, maxFiles: 3, requireQa: true, requireReview: false });
   assert.equal(microTaskPolicy("workflow:\n  micro_tasks:\n    max_files: -1").maxFiles, 2);
+});
+
+test("closeAfterQaPolicy defaults off and parses explicit project opt-in", () => {
+  assert.equal(closeAfterQaPolicy("workflow:\n  close_after_qa: true"), true);
+  assert.equal(closeAfterQaPolicy("workflow:\n  close_after_qa: false"), false);
+  assert.equal(closeAfterQaPolicy("workflow:\n  micro_tasks:\n    enabled: true"), false);
 });
 
 test("testCommand reads the shipped kit.yaml", () => {

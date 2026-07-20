@@ -82,6 +82,14 @@
       "problemMatcher": []
     },
     {
+      "label": "AI-Kit: Copilot finish current task",
+      "type": "shell",
+      "command": "ai-kit",
+      "args": ["copilot", "finish", "--summary", "${input:resultSummary}"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
       "label": "AI-Kit: Run configured QA",
       "type": "shell",
       "command": "ai-kit-gate",

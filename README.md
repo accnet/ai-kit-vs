@@ -180,6 +180,26 @@ The task is still claimed and records implementation and QA evidence. With
 CLI is required. The policy is project configuration, not a global hard-coded
 AI-Kit behavior.
 
+### Closing normal tasks after QA
+
+For a project that intentionally accepts self-delivery without independent
+review, opt in explicitly and disable the reviewer provider:
+
+```yaml
+# .ai-work/models.yaml
+reviewer: off
+```
+
+```yaml
+# .ai-work/project.yaml
+workflow:
+  close_after_qa: true
+```
+
+The gate then transitions normal tasks from `qa-passed` to `done` and records
+that review was skipped. The default remains review-required, and the policy
+is rejected when a reviewer provider is configured.
+
 ## Natural-Language Setup
 
 After setup, the project `AGENTS.md` maps these requests to the same

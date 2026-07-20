@@ -145,6 +145,7 @@ test("global ai-kit setup bootstraps a new project without a local runtime", () 
     "AI-Kit: Copilot load context",
     "AI-Kit: Copilot heartbeat",
     "AI-Kit: Copilot submit result",
+    "AI-Kit: Copilot finish current task",
   ])
     assert.ok(labels.includes(label), `missing ${label}`);
   const claimTask = vscodeTasks.tasks.find(

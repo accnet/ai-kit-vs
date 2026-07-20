@@ -64,3 +64,26 @@ test("agent claims accept an explicit longer lease for editor clients", () => {
   assert.ok(expires - before >= 1199000);
   assert.ok(expires - before <= 1201000);
 });
+
+test("Copilot finish discovers its active claim and submits implementation evidence", () => {
+  const workflowId = `copilot-finish-${Date.now().toString(36)}`;
+  board.createWorkflow("Copilot finish", "feature", workflowId, "planner");
+  board.addTask({
+    workflow_id: workflowId,
+    id: "T1",
+    title: "finishable task",
+    owner: "backend",
+    phase: "build",
+    acceptance: ["finish submits result"],
+  });
+  const claim: any = agent.claim(workflowId, "copilot-extension");
+  const result = agent.finish({
+    workflowId,
+    summary: "Copilot completed the implementation",
+    changedPaths: ["src/example.ts"],
+    commands: ["npm test"],
+  });
+  assert.equal(result.status, "implementation-complete");
+  assert.equal(result.attempt_id, claim.claim.attempt_id);
+  assert.equal(board.pendingReview(workflowId).awaiting_qa[0].id, "T1");
+});

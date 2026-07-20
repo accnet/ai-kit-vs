@@ -34,13 +34,17 @@ export function parseModelConfig(source: string): ModelConfig {
 }
 
 export function configuredPluginId(role: Role, source?: string) {
-  const config = source === undefined ? readConfiguredModels() : parseModelConfig(source);
-  const id = config[role] ?? (role === "executor" ? config.implementer : undefined);
+  const id = configuredProviderId(role, source);
   if (!id || id === "any-capable-agent") throw new ModelConfigError(`models.yaml must configure a plugin for ${role}`);
   if (id === DISABLED_PROVIDER)
     throw new ModelConfigError(`provider is disabled for ${role}; choose a plugin in models.yaml`);
   loadPlugin(role, id);
   return id;
+}
+
+export function configuredProviderId(role: Role, source?: string) {
+  const config = source === undefined ? readConfiguredModels() : parseModelConfig(source);
+  return config[role] ?? (role === "executor" ? config.implementer : undefined);
 }
 
 export type ProviderInfo = { role: Role; plugin: string | null; provider: string | null; command: string[] };
@@ -51,7 +55,7 @@ export function listProviders(source?: string): ProviderInfo[] {
   const config = source === undefined ? readConfiguredModels() : parseModelConfig(source);
   const roles: Role[] = ["planner", "executor", "qa", "reviewer"];
   return roles.map((role) => {
-    const id = config[role] ?? (role === "executor" ? config.implementer : undefined);
+    const id = configuredProviderId(role, source);
     if (!id || id === "any-capable-agent") return { role, plugin: null, provider: null, command: [] };
     if (id === DISABLED_PROVIDER) return { role, plugin: DISABLED_PROVIDER, provider: null, command: [] };
     try {

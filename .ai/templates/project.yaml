@@ -7,6 +7,8 @@ project:
 # Small fixes still use the control plane, but can skip planning and review.
 # Enable per project when this shortened lifecycle is appropriate.
 workflow:
+  # Explicitly close normal tasks after QA when reviewer is off.
+  close_after_qa: false
   micro_tasks:
     enabled: false
     max_files: 2

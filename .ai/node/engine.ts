@@ -84,6 +84,7 @@ const TRANSITIONS: Record<string, [Set<TaskStatus>, TaskStatus]> = {
   complete: [new Set(["in-progress"]), "implementation-complete"],
   "qa-pass": [new Set(["implementation-complete"]), "qa-passed"],
   "review-approve": [new Set(["qa-passed"]), "review-approved"],
+  "close-after-qa": [new Set(["qa-passed"]), "done"],
   close: [new Set(["review-approved"]), "done"],
   "micro-close": [new Set(["implementation-complete", "qa-passed"]), "done"],
   replace: [new Set(["qa-passed"]), "replaced"],

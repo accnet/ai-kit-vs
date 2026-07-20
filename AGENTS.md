@@ -99,6 +99,10 @@ No silent completion: a task is NEVER complete just because code compiles. You
 MUST submit through `ai-kit agent result` before reporting implementation work
 as done; QA, independent review, and gate closure still have to pass.
 
+Copilot clients may use `ai-kit copilot finish --summary "..."` to discover
+their single active claim and submit the implementation result. This command
+does not bypass independent QA, review, or gate closure.
+
 ### Required Runtime Evidence
 
 Before a component is marked implemented, provide:

@@ -258,6 +258,17 @@ export function claimNext(
   }
   return { claimed: null, reason: "contention" };
 }
+export function activeClaims(workflowId: string, clientId: string) {
+  const path = pathFor(workflowId);
+  recover(path);
+  const value = engine.load<engine.State>(path);
+  engine.validate(value);
+  return value.tasks
+    .filter(
+      (task) => task.status === "in-progress" && !!task.claim && !expired(task) && task.claim.client_id === clientId,
+    )
+    .map((task) => ({ task_id: task.id, attempt_id: task.claim!.attempt_id }));
+}
 export function getContext(workflowId: string, taskId: string, clientId: string, attemptId: string) {
   const { task } = taskAt(taskId, workflowId);
   requireClaim(task, clientId, attemptId);

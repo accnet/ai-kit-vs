@@ -47,6 +47,7 @@ Run from the project root; state stays in `.ai-work/`:
 - `ai-kit agent claim --workflow-id <id> --client-id <extension-id>` — claim the next task through the State Manager.
 - `ai-kit agent context --workflow-id <id> --task-id <task> --client-id <client> --attempt-id <attempt>` — load the claimed context.
 - `ai-kit agent result --workflow-id <id> --task-id <task> --client-id <client> --attempt-id <attempt> --status pass --summary "..."` — submit implementation evidence.
+- `ai-kit copilot finish --summary "..."` — let Copilot discover its active claim and submit implementation evidence.
 - `ai-kit timeline` — event history.
 - `ai-kit events --workflow-id <id> --after-cursor <n> --wait-ms 30000` — poll
   for new workflow events with a bounded wait.

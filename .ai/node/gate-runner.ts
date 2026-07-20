@@ -5,7 +5,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import * as board from "./board.js";
 import * as engine from "./engine.js";
-import { microTaskPolicy, verificationCommands, verificationCwd } from "./config.js";
+import { closeAfterQaPolicy, microTaskPolicy, verificationCommands, verificationCwd } from "./config.js";
+import { configuredProviderId } from "./models.js";
 import { assertCommandAllowed, parseCommand } from "./security.js";
 
 export type GateRoles = { qa: boolean; release: boolean };
@@ -83,6 +84,11 @@ export function runGateCycle(
 ): GateAction[] {
   const acted: GateAction[] = [];
   const policy = microTaskPolicy();
+  const closeAfterQa = closeAfterQaPolicy();
+  if (closeAfterQa) {
+    const reviewer = configuredProviderId("reviewer");
+    if (reviewer && reviewer !== "off") throw new engine.EngineError("workflow.close_after_qa requires reviewer: off");
+  }
   const isMicro = (id: string) => {
     const task = taskById(workflowId, id);
     return policy.enabled && task?.tags.includes("micro");
@@ -114,12 +120,21 @@ export function runGateCycle(
     for (const task of engine.load<engine.State>(engine.workflowStatePath(workflowId)).tasks)
       if (
         task.status === "review-approved" ||
+        (closeAfterQa && task.status === "qa-passed") ||
         (isMicro(task.id) &&
           ((task.status === "qa-passed" && !policy.requireReview) ||
             (task.status === "implementation-complete" && !policy.requireQa && !policy.requireReview)))
       )
         try {
           if (task.status === "review-approved") board.close(workflowId, task.id, client);
+          else if (closeAfterQa && task.status === "qa-passed")
+            engine.transition(
+              engine.workflowStatePath(workflowId),
+              task.id,
+              "close-after-qa",
+              client,
+              "closed after QA; review skipped by project policy",
+            );
           else
             engine.transition(
               engine.workflowStatePath(workflowId),
@@ -128,7 +143,10 @@ export function runGateCycle(
               client,
               "closed by micro-task policy",
             );
-          acted.push({ task: task.id, action: "close" });
+          acted.push({
+            task: task.id,
+            action: closeAfterQa && task.status === "qa-passed" ? "close-after-qa" : "close",
+          });
         } catch {}
 
   return acted;
