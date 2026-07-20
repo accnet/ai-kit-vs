@@ -85,3 +85,23 @@ test("prompt falls back to pointing at the context manifest when none is inlined
   const value = prompt("executor", "/tmp/assignment.json", "/tmp/result.json");
   assert.match(value, /load only the sources listed under its `context.included`/);
 });
+
+test("prompt carries the completion reminder from an inlined context manifest", () => {
+  const directory = mkdtempSync(join(tmpdir(), "aikit-prompt-reminder-"));
+  try {
+    const manifestPath = join(directory, "manifest.json");
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        context: { included: [] },
+        completion: { reminder: "REMINDER: call ai-kit agent result." },
+      }),
+    );
+    assert.match(
+      prompt("executor", "/tmp/assignment.json", "/tmp/result.json", manifestPath),
+      /call ai-kit agent result/,
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

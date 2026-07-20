@@ -17,4 +17,6 @@ test("planContext gives the planner a ranked, budgeted context manifest", () => 
   assert.ok(Array.isArray(manifest.context.included) && manifest.context.included.length > 0);
   assert.equal(manifest.context.included[0].path, ".ai/engine/state-schema.md");
   assert.ok(typeof manifest.context.total_tokens === "number");
+  assert.equal(manifest.completion.required_action, "ai-kit agent result");
+  assert.match(manifest.completion.reminder, /Compilation alone is not task completion/);
 });

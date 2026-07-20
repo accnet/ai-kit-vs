@@ -21,6 +21,10 @@ const valid = {
     requirement: { acceptance: ["done"], docs: [] },
     memory: [],
   },
+  completion: {
+    required_action: "ai-kit agent result",
+    reminder: "REMINDER: submit the result",
+  },
   git_status: [],
   generated_at: "2026-07-19T00:00:00Z",
 };
@@ -29,6 +33,7 @@ test("parseContextManifest accepts a well-formed manifest", () => {
   const parsed = parseContextManifest(valid);
   assert.equal(parsed.task, "T1");
   assert.equal(parsed.context.included[0].path, ".ai/engine/state-schema.md");
+  assert.equal(parsed.completion.required_action, "ai-kit agent result");
 });
 
 test("parseContextManifest rejects a manifest missing the context selection", () => {

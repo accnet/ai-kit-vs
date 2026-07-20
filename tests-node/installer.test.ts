@@ -133,6 +133,11 @@ test("global ai-kit setup bootstraps a new project without a local runtime", () 
   assert.match(copilot, /copilot-extension/);
   assert.match(copilot, /ai-kit agent claim/);
   assert.match(copilot, /ai-kit agent result/);
+  assert.match(copilot, /Completion Checklist/);
+  assert.match(copilot, /compiles alone/);
+  const agents = readFileSync(join(project, "AGENTS.md"), "utf8");
+  assert.match(agents, /No silent completion/);
+  assert.match(agents, /MUST submit through `ai-kit agent result`/);
   const vscodeTasks = JSON.parse(readFileSync(join(project, ".vscode/tasks.json"), "utf8"));
   const labels = vscodeTasks.tasks.map((task: { label: string }) => task.label);
   for (const label of [

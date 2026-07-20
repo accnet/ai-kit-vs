@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import test from "node:test";
 import * as board from "../.ai/node/board.js";
 import { artifactPath, writeArtifact } from "../.ai/node/artifacts.js";
-import { CURRENT, load, workflowStatePath } from "../.ai/node/engine.js";
+import { CURRENT, load, PROJECT_ROOT, workflowStatePath } from "../.ai/node/engine.js";
 
 test("Node board enforces a claimed attempt and independent gates", () => {
   const workflowId = `node-board-${Date.now().toString(36)}`;
@@ -194,4 +194,35 @@ test("Node claim reads routed skill sources and persists a scoped context manife
   assert.equal(manifest.context.included[0].path, ".ai/engine/state-schema.md");
   assert.ok(typeof manifest.context.total_tokens === "number");
   assert.deepEqual(board.getContext(workflowId, "T1", "context-executor", claim.claim.attempt_id), manifest);
+  const legacy = { ...manifest };
+  delete (legacy as any).completion;
+  writeFileSync(claim.context_manifest, `${JSON.stringify(legacy)}\n`);
+  assert.equal(
+    board.getContext(workflowId, "T1", "context-executor", claim.claim.attempt_id).completion.required_action,
+    "ai-kit agent result",
+  );
+});
+
+test("status warns about dirty work without a claim and clears it for an active claim", () => {
+  const workflowId = `node-status-warning-${Date.now().toString(36)}`;
+  const marker = join(PROJECT_ROOT, `.aikit-status-warning-${Date.now().toString(36)}`);
+  board.createWorkflow("status guardrail", "feature", workflowId, "planner");
+  board.addTask({
+    workflow_id: workflowId,
+    id: "T1",
+    title: "guard",
+    owner: "backend",
+    phase: "build",
+    acceptance: ["warns"],
+  });
+  writeFileSync(marker, "unclaimed\n");
+  try {
+    const warning = board.status(workflowId);
+    assert.equal(warning.warnings[0].code, "worktree-changed-without-active-claim");
+    const claim = board.claimNext("copilot-extension", workflowId) as any;
+    assert.deepEqual(board.status(workflowId).warnings, []);
+    assert.equal(claim.client_id, "copilot-extension");
+  } finally {
+    rmSync(marker, { force: true });
+  }
 });

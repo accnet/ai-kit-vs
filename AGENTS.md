@@ -91,6 +91,10 @@ illegal transitions, missing acceptance criteria, and ambiguous task ownership.
 The Planner, Executor, Reviewer, and QA are workers operating through that
 control plane; no worker may bypass a gate by directly changing lifecycle state.
 
+No silent completion: a task is NEVER complete just because code compiles. You
+MUST submit through `ai-kit agent result` before reporting implementation work
+as done; QA, independent review, and gate closure still have to pass.
+
 ### Required Runtime Evidence
 
 Before a component is marked implemented, provide:

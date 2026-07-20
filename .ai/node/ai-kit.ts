@@ -42,6 +42,8 @@ import { aiKitHome, initHome } from "./home.js";
 import { kitScalar, microTaskPolicy } from "./config.js";
 import { type MemoryKind } from "./memory.js";
 import { runtime } from "./runtime.js";
+import { status as boardStatus } from "./board.js";
+import { events as workflowEvents, waitForEvents } from "./board.js";
 
 const argv = process.argv.slice(2);
 let statePath = STATE;
@@ -163,6 +165,25 @@ Shows the append-only workflow event history.
 
 Options:
   -h, --help           Show this help`,
+  events: `Usage: ai-kit events --workflow-id <id> [options]
+
+Reads workflow events after a cursor and waits for up to 30 seconds.
+
+Options:
+  --workflow-id <id>   Target workflow (required)
+  --after-cursor <n>   Return events after this sequence (default: 0)
+  --wait-ms <n>        Bounded wait from 0 to 30000 milliseconds
+  -h, --help           Show this help`,
+  watch: `Usage: ai-kit watch --workflow-id <id> [options]
+
+Streams workflow events as newline-delimited JSON for editor clients.
+
+Options:
+  --workflow-id <id>   Target workflow (required)
+  --after-cursor <n>   Start after this sequence (default: 0)
+  --wait-ms <n>        Poll wait from 0 to 30000 milliseconds (default: 30000)
+  --once               Poll once and return a JSON envelope
+  -h, --help           Show this help`,
   lock: `Usage: ai-kit lock
 
 Writes the device lock from the kit root or the project lock from a consuming project.
@@ -238,6 +259,8 @@ function topHelp(): string {
     "status",
     "show",
     "timeline",
+    "events",
+    "watch",
     "route",
     "context",
     "agent",
@@ -539,16 +562,32 @@ const handlers: Record<string, () => unknown> = {
     return state;
   },
   status: () => {
-    const state = load<any>(workflowState());
-    syncPhases(state);
-    const counts: Record<string, number> = {};
-    for (const task of state.tasks) counts[task.status] = (counts[task.status] ?? 0) + 1;
-    return { title: state.title, revision: state.revision, counts, phases: state.phases };
+    return boardStatus(undefined, workflowState());
   },
   timeline: () => {
     const state = load<any>(workflowState());
     validate(state);
     return state.events;
+  },
+  events: async () => {
+    const workflowId = one("workflow-id", true)!;
+    const cursor = Number(one("after-cursor") ?? "0");
+    const waitMs = Number(one("wait-ms") ?? "0");
+    if (!Number.isInteger(cursor) || cursor < 0) throw new EngineError("--after-cursor must be a non-negative integer");
+    return waitForEvents(workflowId, cursor, waitMs);
+  },
+  watch: async () => {
+    const workflowId = one("workflow-id", true)!;
+    let cursor = Number(one("after-cursor") ?? "0");
+    const waitMs = Number(one("wait-ms") ?? "30000");
+    if (!Number.isInteger(cursor) || cursor < 0) throw new EngineError("--after-cursor must be a non-negative integer");
+    if (flag("once")) return waitForEvents(workflowId, cursor, waitMs);
+    for (;;) {
+      const result = await waitForEvents(workflowId, cursor, waitMs);
+      for (const event of result.events)
+        process.stdout.write(`${JSON.stringify({ workflow_id: workflowId, cursor: event.seq, event })}\n`);
+      cursor = result.cursor;
+    }
   },
   blocked: () => {
     const state = load<any>(workflowState());
@@ -739,7 +778,8 @@ const handlers: Record<string, () => unknown> = {
 try {
   const handler = command ? handlers[command] : undefined;
   if (!handler) throw new EngineError(`commands: ${Object.keys(handlers).join(", ")}`);
-  console.log(JSON.stringify(handler(), null, 2));
+  const result = await handler();
+  if (result !== undefined) console.log(JSON.stringify(result, null, 2));
 } catch (error) {
   console.error(`ERROR: ${(error as Error).message}`);
   process.exitCode = 2;

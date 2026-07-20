@@ -15,3 +15,11 @@ workflow state, artifacts, QA, review, and gate transitions.
 Copilot does not need Claude or Codex CLI enabled. A fresh project keeps those
 provider roles off and can still use Copilot as the editor client with local
 QA. Never edit `.ai-work/workflows/` JSON directly.
+
+## Completion Checklist
+
+- Read `AGENTS.md` and the claimed context manifest before editing.
+- Verify the declared acceptance criteria and record the commands that passed.
+- Submit exactly one `ai-kit agent result` for every claimed implementation task.
+- Do not report completion because code compiles alone; the AI-Kit result and
+  independent QA/review gates are required.

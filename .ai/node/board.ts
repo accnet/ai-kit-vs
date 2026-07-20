@@ -34,10 +34,23 @@ const expired = (task: engine.Task) => !!task.claim && Date.parse(task.claim.lea
 const owns = (task: engine.Task, clientId: string, attemptId: string) =>
   !expired(task) && task.claim?.client_id === clientId && task.claim?.attempt_id === attemptId;
 const DEFAULT_LEASE_SECONDS = 900;
+const COMPLETION_REMINDER = {
+  required_action: "ai-kit agent result" as const,
+  reminder:
+    "REMINDER: You must call ai-kit agent result before considering this task done. Compilation alone is not task completion.",
+};
 
 function configuredLeaseSeconds() {
   const value = Number(process.env.AIKIT_LEASE_SECONDS ?? DEFAULT_LEASE_SECONDS);
   return Number.isInteger(value) && value >= 15 && value <= 3600 ? value : DEFAULT_LEASE_SECONDS;
+}
+
+function worktreeChanges() {
+  const result = spawnSync("git", ["status", "--short", "--untracked-files=all"], {
+    cwd: engine.PROJECT_ROOT,
+    encoding: "utf8",
+  });
+  return result.status === 0 ? result.stdout.split(/\r?\n/).filter(Boolean) : [];
 }
 
 function hashSource(path: string): string | null {
@@ -105,6 +118,7 @@ function manifest(task: engine.Task, attemptId: string, workflowId?: string, sta
     sources,
     context,
     bundle: { workspace, git: bundleGit, architecture, requirement, memory },
+    completion: COMPLETION_REMINDER,
     git_status: git.status === 0 ? git.stdout.split(/\r?\n/).filter(Boolean) : [],
     generated_at: engine.now(),
   };
@@ -157,7 +171,20 @@ export function status(workflowId?: string, state?: string) {
   engine.syncPhases(value);
   const counts: Record<string, number> = {};
   for (const task of value.tasks) counts[task.status] = (counts[task.status] ?? 0) + 1;
-  return { title: value.title, revision: value.revision, counts, phases: value.phases };
+  const changed = worktreeChanges();
+  const activeClaim = value.tasks.some((task) => task.status === "in-progress" && !!task.claim && !expired(task));
+  const warnings =
+    changed.length && !activeClaim
+      ? [
+          {
+            code: "worktree-changed-without-active-claim",
+            message:
+              "Project worktree has changes but no active task claim. Claim a task before editing or submit the existing work through ai-kit agent result.",
+            changed,
+          },
+        ]
+      : [];
+  return { title: value.title, revision: value.revision, counts, phases: value.phases, warnings };
 }
 export const timeline = (workflowId?: string, state?: string) =>
   engine.load<engine.State>(pathFor(workflowId, state)).events;
@@ -236,7 +263,8 @@ export function getContext(workflowId: string, taskId: string, clientId: string,
   requireClaim(task, clientId, attemptId);
   const path = join(rootFor(workflowId), "context", `${taskId}-${attemptId}.json`);
   if (!existsSync(path)) throw new engine.EngineError(`context manifest not found for ${taskId}`);
-  return JSON.parse(readFileSync(path, "utf8"));
+  const value = JSON.parse(readFileSync(path, "utf8"));
+  return parseContextManifest({ ...value, completion: value.completion ?? COMPLETION_REMINDER });
 }
 export function heartbeat(
   workflowId: string,

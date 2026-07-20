@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -29,6 +29,8 @@ test("CLI help exits successfully before validation or side effects", () => {
       { args: ["setup", "--help"], marker: "Usage: ai-kit setup" },
       { args: ["lock", "--help"], marker: "Usage: ai-kit lock" },
       { args: ["status", "--help"], marker: "Usage: ai-kit status" },
+      { args: ["events", "--help"], marker: "--after-cursor <n>" },
+      { args: ["watch", "--help"], marker: "newline-delimited" },
       { args: ["memory", "add", "--help"], marker: "Usage: ai-kit memory add" },
       { args: ["agent", "--help"], marker: "--attempt-id <id>" },
     ];
@@ -101,6 +103,24 @@ test("status follows the active workflow pointer instead of always using default
     result = run(project, ["status"]);
     assert.equal(result.status, 0, result.stderr);
     assert.equal(JSON.parse(result.stdout).title, "Crawl workflow");
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+  }
+});
+
+test("status warns when a dirty worktree has no active task claim", () => {
+  const project = mkdtempSync(join(tmpdir(), "aikit-cli-status-warning-"));
+  try {
+    const init = spawnSync("git", ["init", "-q"], { cwd: project, encoding: "utf8" });
+    assert.equal(init.status, 0, init.stderr);
+    writeFileSync(join(project, "changed.txt"), "unclaimed work\n");
+    let result = run(project, ["workflow-create", "guardrails", "--title", "Guardrails", "--workflow", "feature"]);
+    assert.equal(result.status, 0, result.stderr);
+    result = run(project, ["status"]);
+    assert.equal(result.status, 0, result.stderr);
+    const status = JSON.parse(result.stdout);
+    assert.equal(status.warnings[0].code, "worktree-changed-without-active-claim");
+    assert.ok(status.warnings[0].changed.includes("?? changed.txt"));
   } finally {
     rmSync(project, { recursive: true, force: true });
   }

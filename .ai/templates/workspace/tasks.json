@@ -26,6 +26,22 @@
       "problemMatcher": []
     },
     {
+      "label": "AI-Kit: Poll workflow events",
+      "type": "shell",
+      "command": "ai-kit",
+      "args": ["events", "--workflow-id", "${input:workflowId}", "--after-cursor", "${input:eventCursor}", "--wait-ms", "${input:eventWaitMs}"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "AI-Kit: Watch workflow events",
+      "type": "shell",
+      "command": "ai-kit",
+      "args": ["watch", "--workflow-id", "${input:workflowId}", "--after-cursor", "${input:eventCursor}"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
       "label": "AI-Kit: Route task",
       "type": "shell",
       "command": "ai-kit",
@@ -90,6 +106,18 @@
       "id": "attemptId",
       "type": "promptString",
       "description": "AI-Kit claim attempt ID"
+    },
+    {
+      "id": "eventCursor",
+      "type": "promptString",
+      "description": "Last consumed workflow event cursor",
+      "default": "0"
+    },
+    {
+      "id": "eventWaitMs",
+      "type": "promptString",
+      "description": "Event poll wait in milliseconds",
+      "default": "30000"
     },
     {
       "id": "resultStatus",

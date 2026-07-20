@@ -83,6 +83,10 @@ export const ContextManifest = z.object({
     requirement: z.object({ acceptance: z.array(z.string()), docs: z.array(z.string()) }),
     memory: z.array(z.object({ kind: z.string(), title: z.string(), path: z.string() })),
   }),
+  completion: z.object({
+    required_action: z.literal("ai-kit agent result"),
+    reminder: z.string().min(1),
+  }),
   git_status: z.array(z.string()),
   generated_at: z.string(),
 });

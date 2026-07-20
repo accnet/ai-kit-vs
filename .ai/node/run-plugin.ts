@@ -30,24 +30,33 @@ function readSource(relativePath: string): string | undefined {
 // (role contract, skills, plan/tasks/roadmap) that ai-kit already picked.
 function inlinedContext(manifestPath: string | undefined): string {
   if (!manifestPath || !existsSync(manifestPath)) return "";
-  let included: { path: string }[];
+  let manifest: { context?: { included?: { path: string }[] }; completion?: { reminder?: string } };
   try {
-    included = JSON.parse(readFileSync(manifestPath, "utf8"))?.context?.included ?? [];
+    manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   } catch {
     return "";
   }
+  const included = manifest.context?.included ?? [];
   const sections = included
     .map(({ path }) => {
       const text = readSource(path);
       return text ? `--- ${path} ---\n${text.trim()}` : undefined;
     })
     .filter((section): section is string => !!section);
-  if (!sections.length) return "";
+  const reminder = manifest.completion?.reminder;
+  if (!sections.length && !reminder) return "";
   return [
     "",
-    "The following context sources are already loaded below — do not spend a tool call re-reading them:",
-    ...sections,
-  ].join("\n\n");
+    ...(sections.length
+      ? [
+          "The following context sources are already loaded below — do not spend a tool call re-reading them:",
+          ...sections,
+        ]
+      : []),
+    reminder ? `AI-KIT COMPLETION REMINDER: ${reminder}` : undefined,
+  ]
+    .filter((section): section is string => !!section)
+    .join("\n\n");
 }
 
 const argv = process.argv.slice(2);

@@ -48,6 +48,11 @@ Run from the project root; state stays in `.ai-work/`:
 - `ai-kit agent context --workflow-id <id> --task-id <task> --client-id <client> --attempt-id <attempt>` — load the claimed context.
 - `ai-kit agent result --workflow-id <id> --task-id <task> --client-id <client> --attempt-id <attempt> --status pass --summary "..."` — submit implementation evidence.
 - `ai-kit timeline` — event history.
+- `ai-kit events --workflow-id <id> --after-cursor <n> --wait-ms 30000` — poll
+  for new workflow events with a bounded wait.
+- `ai-kit watch --workflow-id <id> --after-cursor <n>` — stream newline-delimited
+  event records for an editor bridge; persist the returned `cursor` and pass it
+  on the next watch/poll so Codex does not replay Copilot events.
 - `ai-kit-worker start --workflow-id <id> --role executor` — run a provider worker.
 - `ai-kit-gate <workflow-id> --once` — run QA and close tasks after reviewer approval.
 
@@ -96,6 +101,10 @@ duration. They may edit project files, but must never edit
 `.ai-work/workflows/` directly. QA, review, and release gates remain owned by
 independent AI-Kit clients.
 
+No silent completion: a task is NEVER complete just because code compiles. You
+MUST submit through `ai-kit agent result` before reporting implementation work
+as done; QA, independent review, and gate closure still have to pass.
+
 For a small, bounded fix, a project may enable the shortened micro-task policy
 in `.ai-work/project.yaml`. It still creates a tracked task and requires an
 independent QA gate, but it can skip a separate plan and reviewer:
@@ -125,3 +134,12 @@ explicit micro-task path.
   only local QA enabled. Select providers during `ai-kit setup` or edit the
   project mapping explicitly. Project plugin overrides belong in
   `.ai-work/plugins/`. Providers are interchangeable and must not be invoked directly.
+
+Editor bridge example after Copilot submits a result:
+
+```bash
+ai-kit watch --workflow-id <id> --after-cursor <last-seen-cursor>
+```
+
+The stream reports `implementation-complete`, `qa-pass`, `review-approve`, and
+`close` events. It observes state only; it never changes task lifecycle state.

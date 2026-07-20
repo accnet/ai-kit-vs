@@ -10,9 +10,9 @@
   },
   "runtime_source": {
     ".ai/node/agent.ts": "2ef688c2f0455fe8fc08687fa122dc42763faec7256232bd52fcd8ce6fdc3f16",
-    ".ai/node/ai-kit.ts": "b0f55cfadb67b8994c598f4e53f7b9ee048df047e53bdc432ba3e0144fe0fcbc",
-    ".ai/node/artifacts.ts": "a79b3a39ed7adf5362d3e914b658c18544b259cfb761d0fb5c33506b005645f7",
-    ".ai/node/board.ts": "d777cbf591ccc633f66475308f6cff952d4a3626d837407defe7f67078c17a6a",
+    ".ai/node/ai-kit.ts": "9f980494c666b3fa9cdf0ac9be55b96f8e4192f572132f64e78210ce41e21ca7",
+    ".ai/node/artifacts.ts": "17c7a3b6266b93dc2cc8a174e8358ba29d69497f786aa3b06d4d4162e6d8297b",
+    ".ai/node/board.ts": "3eef16cd5a9712fabea54c1e38da9e0b890bb3775cfb52b5a62c9e11d99491df",
     ".ai/node/capabilities.ts": "d33bc23b793152910d54abbe69783d4d3c7f00216f83e090488dbd56a444784c",
     ".ai/node/config.ts": "1164f2247161b6d8f7ff3fc9b2d6cb7f6bc7eaa2756c8e0920ce8b641fa2fc1c",
     ".ai/node/context-builder.ts": "99f793ca7049393cf04d290df477ae85e8f77736b2ec55010f23a4dd618711e5",
@@ -29,7 +29,7 @@
     ".ai/node/plugins.ts": "f8f5d03a00e144b1aca0011f33325f79b707d5da4512f5fd700e4ea2ffc50059",
     ".ai/node/provider-adapter.ts": "e7742e24c334bfd9eab2e7ec31d520f94e482e51ce72202cf9b9ff354e772512",
     ".ai/node/provider.ts": "de781893a8b312737de8f92f3638c71ef584febe4a743e0c8fbc0a30dc68b895",
-    ".ai/node/run-plugin.ts": "9095a527e2c21350d97bed707f6431e286a9b630dc99cf19f94539f5756c960c",
+    ".ai/node/run-plugin.ts": "e678b79ca55c956dd3547d1c4864a61bdffc88144a7a7a056060ec07bb2be868",
     ".ai/node/runtime.ts": "c7d4ebc0d9518576c90287482b2fbe26da67fc402d0baa6ba3db215deb9c3250",
     ".ai/node/security.ts": "97e7654018b7cbc6b218e1bb9109aaa7366ea668f7478b7acaf97b59278d639e",
     ".ai/node/worker-manager.ts": "8d469a84581dd894e9b3369332209de309d188ab79d830782bcf43e4e2ce511d",
@@ -420,5 +420,5 @@
   "security": "f4f3eb3b73515af5b6f95af340f892ece0d03b832d916adfd09b9c13f89eddf8",
   "models": "3da85c31795a34bab789d348d273032fcd949e10013c43e693e9604b27417b5f",
   "kit": "f9eb74cee4c72e39bd22b3e8f0fdf3dbe1ff96c27be1577f296f4a07c38a12be",
-  "generated_at": "2026-07-20T04:36:38Z"
+  "generated_at": "2026-07-20T05:44:20Z"
 }
