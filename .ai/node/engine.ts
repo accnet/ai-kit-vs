@@ -219,9 +219,11 @@ export function workflowId(id: string) {
 // Task IDs are embedded verbatim into artifact and worktree filesystem paths
 // (artifacts.ts artifactPath, worktree.ts worktreePath). Path separators or a
 // bare ".." segment would let a task ID escape the workflow's directory, so
-// this charset excludes them by construction.
+// this charset excludes them by construction. The 100-char cap leaves
+// headroom for replaceWithRemediation's `${id}-R${revision}` suffix so a
+// remediation of a near-limit task ID doesn't fail this same check.
 export function taskId(id: string) {
-  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(id))
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/.test(id))
     throw new EngineError(`task ID must use letters, numbers, dots, hyphens, and underscores: ${id}`);
   return id;
 }

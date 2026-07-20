@@ -8,6 +8,7 @@ import {
   EngineError,
   load,
   newState,
+  replaceWithRemediation,
   routeTask,
   runnable,
   save,
@@ -56,6 +57,28 @@ test("Node engine rejects task IDs that could escape the workflow directory", ()
     }
     addTask(path, { id: "T1.retry-2", title: "ok", owner: "backend", phase: "build", acceptance: ["works"] });
     assert.equal(load<any>(path).tasks[0].id, "T1.retry-2");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("remediation of a near-limit task ID does not exceed the taskId length cap", () => {
+  const directory = mkdtempSync(join(tmpdir(), "aikit-node-"));
+  try {
+    const path = join(directory, "state", "workflow.json");
+    save(newState("node", "feature"), path);
+    const longId = `t${"1".repeat(94)}`; // 95 chars, well under the 100-char cap
+    addTask(path, { id: longId, title: "x", owner: "backend", phase: "build", acceptance: ["works"] });
+    transition(path, longId, "start", "codex");
+    transition(path, longId, "complete", "codex");
+    const qaEvidence = join(directory, "qa.json");
+    writeFileSync(qaEvidence, JSON.stringify({ kind: "qa", task: longId, status: "pass" }));
+    transition(path, longId, "qa-pass", "gatekeeper", "", [qaEvidence]);
+    const reviewEvidence = join(directory, "review.json");
+    writeFileSync(reviewEvidence, JSON.stringify({ kind: "review", task: longId, verdict: "changes-requested" }));
+    const remediation = replaceWithRemediation(path, longId, "reviewer", "needs changes", [reviewEvidence]);
+    assert.equal(remediation.id, `${longId}-R1`);
+    assert.equal(load<any>(path).tasks.find((t: any) => t.id === remediation.id)?.id, remediation.id);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
