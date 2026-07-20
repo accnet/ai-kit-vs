@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -117,6 +117,9 @@ export interface Task {
   remediation_for?: string;
 }
 export interface Event {
+  schema_version: 1;
+  event_id: string;
+  workflow_id: string;
   seq: number;
   ts: string;
   action: string;
@@ -361,6 +364,18 @@ function writeLocked(payload: any, path: string, expected?: number) {
   writeFileSync(temporary, `${JSON.stringify(payload, null, 2)}\n`);
   renameSync(temporary, path);
 }
+function syncEventLog(state: State, path: string) {
+  const log = join(workspace(path), "logs", "events.jsonl");
+  mkdirSync(dirname(log), { recursive: true });
+  const temporary = `${log}.${randomUUID()}.tmp`;
+  try {
+    const contents = state.events.map((item) => JSON.stringify(item)).join("\n");
+    writeFileSync(temporary, contents ? `${contents}\n` : "");
+    renameSync(temporary, log);
+  } finally {
+    if (existsSync(temporary)) unlinkSync(temporary);
+  }
+}
 export function saveJson(payload: any, path: string, expected?: number) {
   const lock = `${path}.lock`;
   acquire(lock);
@@ -398,7 +413,14 @@ function writeCurrent(state: State, path: string) {
 }
 export function save(state: State, path: string, expected?: number) {
   assertWorkProject();
-  saveJson(state, path, expected);
+  const lock = `${path}.lock`;
+  acquire(lock);
+  try {
+    writeLocked(state, path, expected);
+    syncEventLog(state, path);
+  } finally {
+    release(lock);
+  }
   writeCurrent(state, path);
   syncWorkflowDocs(state, path);
 }
@@ -470,26 +492,66 @@ export function validate(state: State) {
     }
     if (!task.phase?.trim() || !task.acceptance?.length)
       throw new EngineError(`task ${task.id} needs phase and acceptance criteria`);
+    if (!Array.isArray(task.needs)) throw new EngineError(`task ${task.id} needs must be an array`);
+    const dependencies = new Set<string>();
+    for (const dependency of task.needs)
+      if (dependencies.has(dependency))
+        throw new EngineError(`task ${task.id} has duplicate dependency: ${dependency}`);
+      else dependencies.add(dependency);
     for (const dependency of task.needs)
       if (!tasks.has(dependency)) throw new EngineError(`task ${task.id} has unknown dependency: ${dependency}`);
     if (task.needs.includes(task.id)) throw new EngineError(`task ${task.id} cannot depend on itself`);
   }
-  const seen = new Set<string>(),
-    active = new Set<string>();
-  const visit = (id: string) => {
-    if (active.has(id)) throw new EngineError(`dependency cycle detected at ${id}`);
-    if (!seen.has(id)) {
-      active.add(id);
-      for (const dep of tasks.get(id)!.needs) visit(dep);
-      active.delete(id);
-      seen.add(id);
-    }
-  };
-  for (const id of tasks.keys()) visit(id);
+  topologicalOrder(state);
 }
 const dependencyComplete = (task: Task) => ["done", "replaced"].includes(task.status);
 export const runnable = (task: Task, tasks: Map<string, Task>) =>
   task.status === "todo" && task.needs.every((id: string) => dependencyComplete(tasks.get(id)!));
+function stableTopologicalOrder(tasks: Task[]) {
+  const byId = new Map<string, Task>();
+  const indegree = new Map<string, number>();
+  const dependents = new Map<string, Task[]>();
+  for (const task of tasks) {
+    if (byId.has(task.id)) throw new EngineError("task IDs must be unique");
+    byId.set(task.id, task);
+    indegree.set(task.id, 0);
+    dependents.set(task.id, []);
+  }
+  for (const task of tasks) {
+    if (!Array.isArray(task.needs)) throw new EngineError(`task ${task.id} needs must be an array`);
+    const dependencies = new Set<string>();
+    for (const dependency of task.needs) {
+      if (dependencies.has(dependency))
+        throw new EngineError(`task ${task.id} has duplicate dependency: ${dependency}`);
+      dependencies.add(dependency);
+      if (dependency === task.id) throw new EngineError(`task ${task.id} cannot depend on itself`);
+      if (!byId.has(dependency)) throw new EngineError(`task ${task.id} has unknown dependency: ${dependency}`);
+      indegree.set(task.id, indegree.get(task.id)! + 1);
+      dependents.get(dependency)!.push(task);
+    }
+  }
+  const queue = tasks.filter((task) => indegree.get(task.id) === 0);
+  const ordered: Task[] = [];
+  while (queue.length) {
+    const task = queue.shift()!;
+    ordered.push(task);
+    for (const dependent of dependents.get(task.id)!) {
+      const remaining = indegree.get(dependent.id)! - 1;
+      indegree.set(dependent.id, remaining);
+      if (remaining === 0) queue.push(dependent);
+    }
+  }
+  if (ordered.length !== tasks.length) throw new EngineError("dependency cycle detected");
+  return ordered;
+}
+export function topologicalOrder(stateOrTasks: State | Task[]) {
+  const tasks = Array.isArray(stateOrTasks) ? stateOrTasks : stateOrTasks.tasks;
+  return stableTopologicalOrder(tasks);
+}
+export function runnableTasks(state: State) {
+  const tasks = taskMap(state);
+  return topologicalOrder(state).filter((task) => runnable(task, tasks));
+}
 export function syncPhases(state: State) {
   const tasks = taskMap(state);
   state.phases = [...new Set(state.tasks.map((task) => task.phase))].sort().map((id) => {
@@ -516,11 +578,20 @@ export function event(
   detail = "",
 ) {
   const seq = Math.max(0, ...state.events.map((item) => item.seq ?? 0)) + 1;
-  const item = { seq, ts: now(), action, task: task?.id ?? null, actor, from, to, detail };
+  const item: Event = {
+    schema_version: 1,
+    event_id: randomUUID(),
+    workflow_id: basename(workspace(path)),
+    seq,
+    ts: now(),
+    action,
+    task: task?.id ?? null,
+    actor,
+    from,
+    to,
+    detail,
+  };
   state.events.push(item);
-  const log = join(workspace(path), "logs", "events.jsonl");
-  mkdirSync(dirname(log), { recursive: true });
-  writeFileSync(log, `${JSON.stringify(item)}\n`, { flag: "a" });
   return item;
 }
 function taskFromInput(input: any): Task {

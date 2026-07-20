@@ -101,6 +101,41 @@ test("Node board applies a plan atomically, including dependencies declared out 
   );
 });
 
+test("Node board ready and claim share stable DAG ordering", () => {
+  const workflowId = `node-dag-order-${Date.now().toString(36)}`;
+  board.createWorkflow("Node DAG order", "feature", workflowId, "planner");
+  board.addTask({
+    workflow_id: workflowId,
+    id: "T2",
+    title: "branch two",
+    owner: "backend",
+    phase: "build",
+    acceptance: ["parallel"],
+  });
+  board.addTask({
+    workflow_id: workflowId,
+    id: "T1",
+    title: "branch one",
+    owner: "backend",
+    phase: "build",
+    acceptance: ["parallel"],
+  });
+  board.addTask({
+    workflow_id: workflowId,
+    id: "T3",
+    title: "dependent",
+    owner: "backend",
+    phase: "build",
+    needs: ["T1"],
+    acceptance: ["depends"],
+  });
+  assert.deepEqual(
+    board.ready(workflowId).map((task) => task.id),
+    ["T2", "T1"],
+  );
+  assert.equal((board.claimNext("codex-dag", workflowId) as any).claimed, "T2");
+});
+
 test("Node board event polling returns after a bounded empty wait", async () => {
   const workflowId = `node-poll-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
   board.createWorkflow("event polling", "feature", workflowId);
@@ -108,6 +143,10 @@ test("Node board event polling returns after a bounded empty wait", async () => 
     result = await board.waitForEvents(workflowId, 1, 25);
   assert.deepEqual(result.events, []);
   assert.ok(Date.now() - started >= 20);
+  const replay = board.events(workflowId, 0);
+  assert.ok(replay.events.length > 0);
+  assert.equal(board.events(workflowId, replay.cursor).events.length, 0);
+  assert.throws(() => board.events(workflowId, -1), /non-negative integer/);
 });
 
 test("Node state manager refreshes the startup pointer after a claim", () => {

@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -10,7 +10,7 @@ test("addMemory writes a frontmatter markdown entry and lists it", () => {
   const entry = addMemory({ kind: "decision", title: "Use PostgreSQL", body: "chosen for JSONB" }, dir);
   assert.equal(entry.kind, "decision");
   assert.equal(entry.title, "Use PostgreSQL");
-  assert.match(entry.path, /decisions\/.*use-postgresql\.md$/);
+  assert.match(entry.path, /decisions\/.*use-postgresql-[a-z0-9-]+\.md$/);
 
   const file = readFileSync(join(dir, "decisions", entry.path.split("/").at(-1)!), "utf8");
   assert.match(file, /^---\nkind: decision\ntitle: Use PostgreSQL\n/);
@@ -42,4 +42,30 @@ test("searchMemory matches title and body", () => {
 test("addMemory rejects an unknown kind", () => {
   const dir = mkdtempSync(join(tmpdir(), "mem-"));
   assert.throws(() => addMemory({ kind: "bogus" as never, title: "x" }, dir), MemoryError);
+});
+
+test("addMemory preserves same-day entries with the same title", () => {
+  const dir = mkdtempSync(join(tmpdir(), "mem-"));
+  const first = addMemory({ kind: "decision", title: "Keep the archive", body: "first" }, dir);
+  const second = addMemory({ kind: "decision", title: "Keep the archive", body: "second" }, dir);
+
+  assert.notEqual(first.path, second.path);
+  assert.deepEqual(
+    listMemory(undefined, dir)
+      .map((entry) => entry.path)
+      .sort(),
+    [first.path, second.path].sort(),
+  );
+  assert.match(readFileSync(join(dir, "decisions", first.path.split("/").at(-1)!), "utf8"), /first/);
+  assert.match(readFileSync(join(dir, "decisions", second.path.split("/").at(-1)!), "utf8"), /second/);
+});
+
+test("addMemory publishes through a temporary file and leaves no temp files", () => {
+  const dir = mkdtempSync(join(tmpdir(), "mem-"));
+  addMemory({ kind: "note", title: "Atomic note", body: "durable" }, dir);
+
+  assert.deepEqual(
+    readdirSync(join(dir, "notes")).filter((name) => name.endsWith(".tmp")),
+    [],
+  );
 });

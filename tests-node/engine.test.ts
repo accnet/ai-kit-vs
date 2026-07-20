@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import test from "node:test";
 import {
   addTask,
@@ -12,6 +12,8 @@ import {
   routeTask,
   runnable,
   save,
+  runnableTasks,
+  topologicalOrder,
   transition,
   validate,
 } from "../.ai/node/engine.js";
@@ -37,6 +39,15 @@ test("Node engine persists and transitions an evidence-gated workflow", () => {
     const current = load<any>(path);
     assert.equal(current.tasks[0].status, "implementation-complete");
     assert.equal(current.events.at(-1).action, "complete");
+    assert.equal(current.events.at(-1).schema_version, 1);
+    assert.match(current.events.at(-1).event_id, /^[0-9a-f-]{36}$/);
+    assert.equal(current.events.at(-1).workflow_id, basename(directory));
+    const logged = readFileSync(join(directory, "logs", "events.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    assert.deepEqual(logged, current.events);
+    assert.equal(new Set(current.events.map((event: any) => event.event_id)).size, current.events.length);
     validate(current);
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -128,7 +139,75 @@ test("Node engine rejects invalid dependency graphs", () => {
       blocked_reason: null,
     },
   ];
-  assert.throws(() => validate(state), EngineError);
+  assert.throws(() => validate(state), /dependency cycle detected/);
+
+  state.tasks[1].needs = ["T1", "T1"];
+  assert.throws(() => validate(state), /duplicate dependency/);
+  state.tasks[1].needs = "T1" as any;
+  assert.throws(() => validate(state), /needs must be an array/);
+  state.tasks[1].needs = ["missing"];
+  assert.throws(() => validate(state), /unknown dependency: missing/);
+});
+
+test("Node engine returns stable topological and runnable ordering", () => {
+  const state: any = newState("ordered", "feature");
+  state.tasks = [
+    {
+      id: "T3",
+      title: "after first",
+      owner: "backend",
+      phase: "build",
+      needs: ["T1"],
+      status: "todo",
+      acceptance: ["ok"],
+      files: [],
+      tags: [],
+      attempts: 0,
+      evidence: [],
+      blocked_reason: null,
+    },
+    {
+      id: "T2",
+      title: "independent",
+      owner: "backend",
+      phase: "build",
+      needs: [],
+      status: "todo",
+      acceptance: ["ok"],
+      files: [],
+      tags: [],
+      attempts: 0,
+      evidence: [],
+      blocked_reason: null,
+    },
+    {
+      id: "T1",
+      title: "first",
+      owner: "backend",
+      phase: "build",
+      needs: [],
+      status: "todo",
+      acceptance: ["ok"],
+      files: [],
+      tags: [],
+      attempts: 0,
+      evidence: [],
+      blocked_reason: null,
+    },
+  ];
+  assert.deepEqual(
+    topologicalOrder(state).map((task) => task.id),
+    ["T2", "T1", "T3"],
+  );
+  assert.deepEqual(
+    runnableTasks(state).map((task) => task.id),
+    ["T2", "T1"],
+  );
+  state.tasks[2].status = "done";
+  assert.deepEqual(
+    runnableTasks(state).map((task) => task.id),
+    ["T2", "T3"],
+  );
 });
 
 test("Node engine recovers an expired lock file", () => {
@@ -141,6 +220,54 @@ test("Node engine recovers an expired lock file", () => {
     state.title = "recovered";
     save(state, path, state.revision);
     assert.equal(load<any>(path).title, "recovered");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("Node engine does not publish an event for a stale state mutation", () => {
+  const directory = mkdtempSync(join(tmpdir(), "aikit-node-events-"));
+  try {
+    const path = join(directory, "state", "workflow.json");
+    save(newState("events", "feature"), path);
+    addTask(path, { id: "T1", title: "first", owner: "backend", phase: "build", acceptance: ["works"] });
+    addTask(path, { id: "T2", title: "second", owner: "backend", phase: "build", acceptance: ["works"] });
+    const staleRevision = load<any>(path).revision;
+    transition(path, "T1", "start", "first", "", [], staleRevision);
+    const before = readFileSync(join(directory, "logs", "events.jsonl"), "utf8");
+    assert.throws(() => transition(path, "T2", "start", "stale", "", [], staleRevision), /state changed concurrently/);
+    const current = load<any>(path);
+    assert.equal(current.tasks.find((task: any) => task.id === "T2").status, "todo");
+    assert.equal(readFileSync(join(directory, "logs", "events.jsonl"), "utf8"), before);
+    assert.equal(
+      current.events.some((event: any) => event.task === "T2" && event.action === "start"),
+      false,
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("Node engine keeps legacy events readable", () => {
+  const directory = mkdtempSync(join(tmpdir(), "aikit-node-legacy-events-"));
+  try {
+    const path = join(directory, "state", "workflow.json");
+    const state: any = newState("legacy", "feature");
+    state.events = [
+      {
+        seq: 1,
+        ts: "2026-01-01T00:00:00Z",
+        action: "init",
+        task: null,
+        actor: "planner",
+        from: null,
+        to: null,
+        detail: "legacy",
+      },
+    ];
+    save(state, path);
+    assert.doesNotThrow(() => validate(load<any>(path)));
+    assert.equal(load<any>(path).events[0].detail, "legacy");
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

@@ -3,7 +3,17 @@
 // conventions, and postmortems as markdown files with a small frontmatter block,
 // and can list or search them at runtime.
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, join } from "node:path";
 import { displayPath, now, PROJECT_ROOT } from "./engine.js";
 
@@ -33,11 +43,20 @@ export function addMemory(
   const date = now();
   const kindDir = join(dir, `${input.kind}s`);
   mkdirSync(kindDir, { recursive: true });
-  const file = join(kindDir, `${date.slice(0, 10)}-${slug(input.title)}.md`);
-  writeFileSync(
-    file,
-    `---\nkind: ${input.kind}\ntitle: ${input.title}\ndate: ${date}\n---\n\n# ${input.title}\n\n${input.body ?? ""}\n`,
-  );
+  const fileName = `${date.slice(0, 10)}-${slug(input.title)}-${randomUUID().slice(0, 8)}.md`;
+  const file = join(kindDir, fileName);
+  const temporary = join(kindDir, `.${fileName}.${randomUUID()}.tmp`);
+  const content = `---\nkind: ${input.kind}\ntitle: ${input.title}\ndate: ${date}\n---\n\n# ${input.title}\n\n${input.body ?? ""}\n`;
+  try {
+    writeFileSync(temporary, content, { flag: "wx" });
+    renameSync(temporary, file);
+  } finally {
+    if (existsSync(temporary)) {
+      try {
+        unlinkSync(temporary);
+      } catch {}
+    }
+  }
   return { kind: input.kind, title: input.title, date, path: displayPath(file) };
 }
 

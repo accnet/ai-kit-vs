@@ -18,6 +18,7 @@ import {
   WORK,
   routeTask,
   runnable,
+  runnableTasks,
   save,
   STATE,
   syncPhases,
@@ -519,8 +520,7 @@ const handlers: Record<string, () => unknown> = {
   },
   ready: () => {
     const state = load<any>(workflowState());
-    const tasks = taskMap(state);
-    return state.tasks.filter((task: any) => runnable(task, tasks));
+    return runnableTasks(state);
   },
   transition: () =>
     transition(workflowState(), argv[0], argv[1], one("actor", true)!, one("detail") ?? "", many("evidence")),

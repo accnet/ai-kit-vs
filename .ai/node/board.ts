@@ -147,8 +147,8 @@ export function ready(workflowId?: string, state?: string) {
   recover(path);
   const value = engine.load<engine.State>(path),
     tasks = engine.taskMap(value);
-  return value.tasks
-    .filter((task) => engine.runnable(task, tasks))
+  return engine
+    .runnableTasks(value)
     .map((task) => ({ id: task.id, title: task.title, owner: task.owner, phase: task.phase }));
 }
 export function status(workflowId?: string, state?: string) {
@@ -162,7 +162,10 @@ export function status(workflowId?: string, state?: string) {
 export const timeline = (workflowId?: string, state?: string) =>
   engine.load<engine.State>(pathFor(workflowId, state)).events;
 export function events(workflowId: string, afterCursor = 0) {
-  const found = timeline(workflowId).filter((item) => (item.seq ?? 0) > afterCursor);
+  if (!Number.isInteger(afterCursor) || afterCursor < 0)
+    throw new engine.EngineError("after_cursor must be a non-negative integer");
+  const value = engine.load<engine.State>(pathFor(workflowId));
+  const found = value.events.filter((item) => (item.seq ?? 0) > afterCursor);
   return { workflow_id: workflowId, events: found, cursor: found.at(-1)?.seq ?? afterCursor };
 }
 export async function waitForEvents(workflowId: string, afterCursor = 0, waitMs = 0) {
@@ -203,9 +206,8 @@ export function claimNext(
   const path = pathFor(workflowId);
   recover(path);
   for (let retry = 0; retry < 6; retry++) {
-    const value = engine.load<engine.State>(path),
-      tasks = engine.taskMap(value);
-    const task = value.tasks.find((item) => engine.runnable(item, tasks) && (!owner || item.owner === owner));
+    const value = engine.load<engine.State>(path);
+    const task = engine.runnableTasks(value).find((item) => !owner || item.owner === owner);
     if (!task) return { claimed: null, reason: "no runnable task" };
     const claim = engine.makeClaim(clientId, task, leaseSeconds);
     try {

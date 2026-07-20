@@ -27,8 +27,10 @@ bash .ai/scripts/ai-kit.sh transition T1 complete --actor planner --detail "Plan
 `complete` means implementation complete. A task becomes `done` only after
 `qa-pass`, `review-approve`, and `close`. QA and review actions require an
 existing JSON evidence artifact. QA requires `{"kind":"qa","task":"T1","status":"pass"}`;
-review requires `{"kind":"review","task":"T1","verdict":"approve"}`. All state mutations append an event
-to `.ai-work/workflows/<workflow-id>/logs/events.jsonl`.
+review requires `{"kind":"review","task":"T1","verdict":"approve"}`. Each successful state mutation creates a versioned event in the canonical workflow state and atomically synchronizes
+`.ai-work/workflows/<workflow-id>/logs/events.jsonl`. Replay consumers use the event
+cursor returned by `events`; cursors are non-negative and events are delivered strictly
+after the supplied cursor.
 
 `onboard` previews detected host stack, source directories, and verification
 commands. Use `onboard --apply` only after reviewing the output; it backs up
