@@ -30,6 +30,7 @@ test("CLI help exits successfully before validation or side effects", () => {
       { args: ["lock", "--help"], marker: "Usage: ai-kit lock" },
       { args: ["status", "--help"], marker: "Usage: ai-kit status" },
       { args: ["memory", "add", "--help"], marker: "Usage: ai-kit memory add" },
+      { args: ["agent", "--help"], marker: "--attempt-id <id>" },
     ];
     for (const item of cases) {
       const result = run(project, item.args);

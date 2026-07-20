@@ -129,6 +129,30 @@ test("global ai-kit setup bootstraps a new project without a local runtime", () 
   assert.deepEqual(JSON.parse(readFileSync(join(project, ".vscode/settings.json"), "utf8")), {
     "aiKit.home": "~/ai-kit",
   });
+  const copilot = readFileSync(join(project, ".github/copilot-instructions.md"), "utf8");
+  assert.match(copilot, /copilot-extension/);
+  assert.match(copilot, /ai-kit agent claim/);
+  assert.match(copilot, /ai-kit agent result/);
+  const vscodeTasks = JSON.parse(readFileSync(join(project, ".vscode/tasks.json"), "utf8"));
+  const labels = vscodeTasks.tasks.map((task: { label: string }) => task.label);
+  for (const label of [
+    "AI-Kit: Copilot claim next task",
+    "AI-Kit: Copilot load context",
+    "AI-Kit: Copilot heartbeat",
+    "AI-Kit: Copilot submit result",
+  ])
+    assert.ok(labels.includes(label), `missing ${label}`);
+  const claimTask = vscodeTasks.tasks.find(
+    (task: { label: string }) => task.label === "AI-Kit: Copilot claim next task",
+  );
+  assert.deepEqual(claimTask.args, [
+    "agent",
+    "claim",
+    "--workflow-id",
+    "${input:workflowId}",
+    "--client-id",
+    "copilot-extension",
+  ]);
 });
 
 test("setup can opt providers in once through project configuration", () => {

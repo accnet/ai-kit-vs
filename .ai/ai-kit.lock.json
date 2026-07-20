@@ -10,7 +10,7 @@
   },
   "runtime_source": {
     ".ai/node/agent.ts": "2ef688c2f0455fe8fc08687fa122dc42763faec7256232bd52fcd8ce6fdc3f16",
-    ".ai/node/ai-kit.ts": "85a08ca21422edb1494be7c72f7f821d4876ce8bbb566c9b064ec3956918610f",
+    ".ai/node/ai-kit.ts": "b0f55cfadb67b8994c598f4e53f7b9ee048df047e53bdc432ba3e0144fe0fcbc",
     ".ai/node/artifacts.ts": "a79b3a39ed7adf5362d3e914b658c18544b259cfb761d0fb5c33506b005645f7",
     ".ai/node/board.ts": "d777cbf591ccc633f66475308f6cff952d4a3626d837407defe7f67078c17a6a",
     ".ai/node/capabilities.ts": "d33bc23b793152910d54abbe69783d4d3c7f00216f83e090488dbd56a444784c",
@@ -420,5 +420,5 @@
   "security": "f4f3eb3b73515af5b6f95af340f892ece0d03b832d916adfd09b9c13f89eddf8",
   "models": "3da85c31795a34bab789d348d273032fcd949e10013c43e693e9604b27417b5f",
   "kit": "f9eb74cee4c72e39bd22b3e8f0fdf3dbe1ff96c27be1577f296f4a07c38a12be",
-  "generated_at": "2026-07-20T04:13:22Z"
+  "generated_at": "2026-07-20T04:36:38Z"
 }

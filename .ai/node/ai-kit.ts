@@ -212,6 +212,11 @@ Common options:
   --workflow-id <id>   Target workflow (required)
   --client-id <id>     Calling extension or worker (required)
   --lease-seconds <n>  Claim lease duration for agent claim (15..3600)
+  --task-id <id>       Task for context, heartbeat, result, QA, or review
+  --attempt-id <id>    Active claim attempt for context, heartbeat, or result
+  --status <status>    pass or fail for result or QA
+  --summary <text>     Evidence summary for result or QA
+  --verdict <value>    approve or changes-requested for review
   -h, --help           Show this help`,
   roles: `Usage: ai-kit roles
 

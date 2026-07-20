@@ -34,6 +34,38 @@
       "problemMatcher": []
     },
     {
+      "label": "AI-Kit: Copilot claim next task",
+      "type": "shell",
+      "command": "ai-kit",
+      "args": ["agent", "claim", "--workflow-id", "${input:workflowId}", "--client-id", "copilot-extension"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "AI-Kit: Copilot load context",
+      "type": "shell",
+      "command": "ai-kit",
+      "args": ["agent", "context", "--workflow-id", "${input:workflowId}", "--task-id", "${input:taskId}", "--client-id", "copilot-extension", "--attempt-id", "${input:attemptId}"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "AI-Kit: Copilot heartbeat",
+      "type": "shell",
+      "command": "ai-kit",
+      "args": ["agent", "heartbeat", "--workflow-id", "${input:workflowId}", "--task-id", "${input:taskId}", "--client-id", "copilot-extension", "--attempt-id", "${input:attemptId}"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "AI-Kit: Copilot submit result",
+      "type": "shell",
+      "command": "ai-kit",
+      "args": ["agent", "result", "--workflow-id", "${input:workflowId}", "--task-id", "${input:taskId}", "--client-id", "copilot-extension", "--attempt-id", "${input:attemptId}", "--status", "${input:resultStatus}", "--summary", "${input:resultSummary}"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
       "label": "AI-Kit: Run configured QA",
       "type": "shell",
       "command": "ai-kit-gate",
@@ -53,6 +85,23 @@
       "id": "taskId",
       "type": "promptString",
       "description": "AI-Kit task ID"
+    },
+    {
+      "id": "attemptId",
+      "type": "promptString",
+      "description": "AI-Kit claim attempt ID"
+    },
+    {
+      "id": "resultStatus",
+      "type": "pickString",
+      "description": "Implementation result status",
+      "options": ["pass", "fail"],
+      "default": "pass"
+    },
+    {
+      "id": "resultSummary",
+      "type": "promptString",
+      "description": "Implementation result summary"
     }
   ]
 }
