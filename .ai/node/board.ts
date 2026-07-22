@@ -34,6 +34,7 @@ const expired = (task: engine.Task) => !!task.claim && Date.parse(task.claim.lea
 const owns = (task: engine.Task, clientId: string, attemptId: string) =>
   !expired(task) && task.claim?.client_id === clientId && task.claim?.attempt_id === attemptId;
 const DEFAULT_LEASE_SECONDS = 900;
+const PRESERVE_CURRENT = { preserveCurrent: true };
 const COMPLETION_REMINDER = {
   required_action: "ai-kit agent result" as const,
   reminder:
@@ -45,12 +46,50 @@ function configuredLeaseSeconds() {
   return Number.isInteger(value) && value >= 15 && value <= 3600 ? value : DEFAULT_LEASE_SECONDS;
 }
 
-function worktreeChanges() {
+type WorktreeSnapshot = { available: boolean; files: Record<string, string> };
+
+function worktreeSnapshot(): WorktreeSnapshot {
   const result = spawnSync("git", ["status", "--short", "--untracked-files=all"], {
     cwd: engine.PROJECT_ROOT,
     encoding: "utf8",
   });
-  return result.status === 0 ? result.stdout.split(/\r?\n/).filter(Boolean) : [];
+  if (result.status !== 0) return { available: false, files: {} };
+  const files: Record<string, string> = {};
+  for (const line of result.stdout.split(/\r?\n/).filter(Boolean)) {
+    const status = line.slice(0, 2);
+    const rawPath = line.slice(3).trim();
+    const path = (rawPath.includes(" -> ") ? rawPath.split(" -> ").at(-1) : rawPath)?.replaceAll("\\", "/");
+    if (!path) continue;
+    let content = "missing";
+    try {
+      const absolute = join(engine.PROJECT_ROOT, path);
+      if (statSync(absolute).isFile()) content = createHash("sha256").update(readFileSync(absolute)).digest("hex");
+    } catch {}
+    files[path] = `${status}:${content}`;
+  }
+  return { available: true, files };
+}
+
+function worktreeChanges() {
+  return Object.entries(worktreeSnapshot().files).map(([path, signature]) => `${signature.slice(0, 2)} ${path}`);
+}
+
+function normalizePath(path: string) {
+  return path.replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/$/, "");
+}
+
+function changedSinceBaseline(task: engine.Task) {
+  const current = worktreeSnapshot();
+  const baseline = task.worktree_baseline ?? task.claim?.worktree_before ?? {};
+  const changed = Object.entries(current.files)
+    .filter(([path, signature]) => baseline[path] !== signature)
+    .map(([path]) => normalizePath(path));
+  const allowed = task.files.map(normalizePath);
+  return {
+    available: current.available,
+    changed,
+    declared: changed.filter((path) => allowed.some((file) => path === file || path.startsWith(`${file}/`))),
+  };
 }
 
 function hashSource(path: string): string | null {
@@ -72,7 +111,7 @@ function hashSource(path: string): string | null {
   return hash.digest("hex");
 }
 
-function recover(path: string) {
+function recover(path: string, preserveCurrent = false) {
   const state = engine.load<engine.State>(path);
   const items = state.tasks.filter((task) => task.status === "in-progress" && expired(task));
   if (!items.length) return;
@@ -83,7 +122,10 @@ function recover(path: string) {
     engine.event(state, path, "claim-expired", task, "state-manager", "in-progress", "todo", "claim lease expired");
   }
   engine.syncPhases(state);
-  engine.save(state, path, state.revision);
+  engine.save(state, path, state.revision, { preserveCurrent });
+}
+export function recoverExpiredClaims(workflowId: string, state?: string) {
+  recover(pathFor(workflowId, state), true);
 }
 function requireClaim(task: engine.Task, clientId: string, attemptId: string) {
   if (!owns(task, clientId, attemptId))
@@ -143,7 +185,11 @@ export const createWorkflow = (title: string, workflow = "feature", workflowId?:
     actor,
   );
 export const addTask = (input: any) =>
-  engine.addTask(pathFor(input.workflow_id, input.state), { ...input, expectedRevision: input.expected_revision });
+  engine.addTask(
+    pathFor(input.workflow_id, input.state),
+    { ...input, expectedRevision: input.expected_revision },
+    { preserveCurrent: !!input.workflow_id || !!input.state },
+  );
 export function applyPlanArtifact(workflowId: string, actor: string, output: string) {
   if (!managedArtifactPath(workflowId, output))
     throw new engine.EngineError("plan artifact must be inside the workflow workspace");
@@ -153,20 +199,23 @@ export function applyPlanArtifact(workflowId: string, actor: string, output: str
   engine.addTasks(
     pathFor(workflowId),
     plan.tasks.map((task) => ({ ...task, actor })),
+    { preserveCurrent: true },
   );
   return { workflow_id: workflowId, tasks: plan.tasks.map((task) => task.id), artifact: displayArtifactPath(output) };
 }
 export function ready(workflowId?: string, state?: string) {
   const path = pathFor(workflowId, state);
-  recover(path);
+  recover(path, !!workflowId || !!state);
   const value = engine.load<engine.State>(path),
     tasks = engine.taskMap(value);
   return engine
     .runnableTasks(value)
     .map((task) => ({ id: task.id, title: task.title, owner: task.owner, phase: task.phase }));
 }
-export function status(workflowId?: string, state?: string) {
-  const value = engine.load<engine.State>(pathFor(workflowId, state));
+export function status(workflowId?: string, state?: string, preserveCurrent = false) {
+  const path = pathFor(workflowId, state);
+  recover(path, preserveCurrent);
+  const value = engine.load<engine.State>(path);
   engine.validate(value);
   engine.syncPhases(value);
   const counts: Record<string, number> = {};
@@ -237,8 +286,9 @@ export function claimNext(
     const task = engine.runnableTasks(value).find((item) => !owner || item.owner === owner);
     if (!task) return { claimed: null, reason: "no runnable task" };
     const claim = engine.makeClaim(clientId, task, leaseSeconds);
+    claim.worktree_before = worktreeSnapshot().files;
     try {
-      engine.transition(path, task.id, "start", clientId, "", [], value.revision, claim);
+      engine.transition(path, task.id, "start", clientId, "", [], value.revision, claim, PRESERVE_CURRENT);
       const context_manifest = manifest(task, claim.attempt_id, workflowId);
       return {
         claimed: task.id,
@@ -289,7 +339,7 @@ export function heartbeat(
   // requireClaim guarantees an owned, unexpired claim exists.
   task.claim!.lease_expires_at = engine.stamp(new Date(Date.now() + leaseSeconds * 1000));
   engine.event(value, path, "heartbeat", task, clientId, "in-progress", "in-progress", "claim renewed");
-  engine.save(value, path, value.revision);
+  engine.save(value, path, value.revision, PRESERVE_CURRENT);
   return task.claim;
 }
 export function submitResult(
@@ -342,16 +392,33 @@ export function submitResultArtifact(
     throw new engine.EngineError("result artifact does not match the active attempt");
   const evidence = displayArtifactPath(output);
   if (result.status !== "pass") {
-    engine.transition(path, taskId, "block", clientId, `executor reported failure: ${result.summary}`);
+    engine.transition(
+      path,
+      taskId,
+      "block",
+      clientId,
+      `executor reported failure: ${result.summary}`,
+      [],
+      undefined,
+      undefined,
+      PRESERVE_CURRENT,
+    );
     return { task: taskId, status: "blocked", evidence };
   }
-  engine.transition(path, taskId, "complete", clientId, result.summary);
+  if (task.attempts > 1 && task.files.length) {
+    const diff = changedSinceBaseline(task);
+    if (!diff.available || !diff.declared.length)
+      throw new engine.EngineError(
+        `refusing implementation-complete for retry ${task.id}: no declared file changed in the worktree (attempt ${task.attempts})`,
+      );
+  }
+  engine.transition(path, taskId, "complete", clientId, result.summary, [], undefined, undefined, PRESERVE_CURRENT);
   return { task: taskId, status: "implementation-complete", evidence };
 }
 export function reportBlocked(workflowId: string, taskId: string, clientId: string, attemptId: string, reason: string) {
   const { path, task } = taskAt(taskId, workflowId);
   requireClaim(task, clientId, attemptId);
-  return engine.transition(path, taskId, "block", clientId, reason);
+  return engine.transition(path, taskId, "block", clientId, reason, [], undefined, undefined, PRESERVE_CURRENT);
 }
 export function submitQaArtifact(workflowId: string, taskId: string, actor: string, output: string) {
   const { path, task } = taskAt(taskId, workflowId);
@@ -364,8 +431,28 @@ export function submitQaArtifact(workflowId: string, taskId: string, actor: stri
     throw new engine.EngineError("QA artifact does not match the task or actor");
   const evidence = displayArtifactPath(output);
   if (qa.status !== "pass")
-    return engine.transition(path, taskId, "block", actor, `QA failed: ${qa.summary}`, [evidence]);
-  return engine.transition(path, taskId, "qa-pass", actor, qa.summary, [evidence]);
+    return engine.transition(
+      path,
+      taskId,
+      "block",
+      actor,
+      `QA failed: ${qa.summary}`,
+      [evidence],
+      undefined,
+      undefined,
+      PRESERVE_CURRENT,
+    );
+  return engine.transition(
+    path,
+    taskId,
+    "qa-pass",
+    actor,
+    qa.summary,
+    [evidence],
+    undefined,
+    undefined,
+    PRESERVE_CURRENT,
+  );
 }
 export function submitQa(
   workflowId: string,
@@ -399,8 +486,25 @@ export function submitReviewArtifact(workflowId: string, taskId: string, actor: 
     throw new engine.EngineError("review artifact does not match the task or actor");
   const evidence = displayArtifactPath(output);
   if (review.verdict === "changes-requested")
-    return engine.replaceWithRemediation(path, taskId, actor, review.notes || "changes requested", [evidence]);
-  return engine.transition(path, taskId, "review-approve", actor, review.notes, [evidence]);
+    return engine.replaceWithRemediation(
+      path,
+      taskId,
+      actor,
+      review.notes || "changes requested",
+      [evidence],
+      PRESERVE_CURRENT,
+    );
+  return engine.transition(
+    path,
+    taskId,
+    "review-approve",
+    actor,
+    review.notes,
+    [evidence],
+    undefined,
+    undefined,
+    PRESERVE_CURRENT,
+  );
 }
 export function submitReview(
   workflowId: string,
@@ -422,7 +526,7 @@ export function submitReview(
   return submitReviewArtifact(workflowId, taskId, actor, output);
 }
 export const close = (workflowId: string, taskId: string, actor: string) =>
-  engine.transition(pathFor(workflowId), taskId, "close", actor);
+  engine.transition(pathFor(workflowId), taskId, "close", actor, "", [], undefined, undefined, PRESERVE_CURRENT);
 export function pendingReview(workflowId: string) {
   const value = engine.load<engine.State>(pathFor(workflowId));
   const result = { awaiting_qa: [] as any[], awaiting_review: [] as any[], blocked: [] as any[] };

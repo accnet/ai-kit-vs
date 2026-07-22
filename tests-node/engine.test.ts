@@ -15,6 +15,7 @@ import {
   runnableTasks,
   topologicalOrder,
   transition,
+  useWorkflow,
   validate,
 } from "../.ai/node/engine.js";
 import * as board from "../.ai/node/board.js";
@@ -101,7 +102,9 @@ test("Node plugin contract discovers role-scoped manifests", () => {
     new Set(["claude", "claude-code", "codex", "cursor", "gemini", "qwen"]),
   );
   const plugin = listPlugins("executor").find((item) => item.id === "codex")!;
-  assert.ok(pluginCommand(plugin, "input.json", "output.json", "hello").includes("hello"));
+  assert.equal(plugin.prompt_transport, "stdin");
+  assert.equal(pluginCommand(plugin, "input.json", "output.json", "hello").includes("hello"), false);
+  assert.ok(pluginCommand(plugin, "input.json", "output.json", "hello").includes("-"));
   assert.ok(pluginCommand(plugin, "input.json", "output.json", "hello").includes("{work}") === false);
   const local = listPlugins("qa").find((item) => item.id === "local")!;
   assert.ok(pluginCommand(local, "input.json", "output.json", "hello")[1].startsWith("/"));
@@ -147,6 +150,41 @@ test("Node engine rejects invalid dependency graphs", () => {
   assert.throws(() => validate(state), /needs must be an array/);
   state.tasks[1].needs = ["missing"];
   assert.throws(() => validate(state), /unknown dependency: missing/);
+});
+
+test("retire preserves task history and rejects active dependents", () => {
+  const directory = mkdtempSync(join(tmpdir(), "aikit-retire-"));
+  try {
+    const path = join(directory, "state", "workflow.json");
+    save(newState("retire", "feature"), path);
+    addTask(path, { id: "MY1", title: "duplicate", owner: "devops", phase: "build", acceptance: ["obsolete"] });
+    transition(path, "MY1", "retire", "planner", "superseded by SA36");
+    assert.equal(load<any>(path).tasks[0].status, "retired");
+
+    addTask(path, { id: "D1", title: "dependency", owner: "integration", phase: "build", acceptance: ["done"] });
+    addTask(path, {
+      id: "P2",
+      title: "dependent",
+      owner: "backend",
+      phase: "build",
+      needs: ["D1"],
+      acceptance: ["done"],
+    });
+    transition(path, "D1", "start", "executor");
+    transition(path, "D1", "complete", "executor");
+    transition(path, "D1", "micro-close", "executor");
+    assert.throws(
+      () => transition(path, "D1", "retire", "planner", "legacy task"),
+      /cannot retire D1; active dependents: P2/,
+    );
+    transition(path, "P2", "start", "executor");
+    transition(path, "P2", "complete", "executor");
+    transition(path, "P2", "micro-close", "executor");
+    transition(path, "D1", "retire", "planner", "legacy task after dependent completion");
+    assert.equal(load<any>(path).tasks.find((task: any) => task.id === "D1").status, "retired");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("Node engine returns stable topological and runnable ordering", () => {

@@ -64,6 +64,8 @@ test("current pointer merges parallel workflows and rejects ambiguous reads", ()
       assert.equal(result.status, 0, result.stderr);
       assert.equal(JSON.parse(result.stdout).title, id);
     }
+    const selected = JSON.parse(readFileSync(join(work, "state/current.json"), "utf8"));
+    assert.equal(selected.workflow_state, join(work, "workflows/beta/state/workflow.json"));
 
     // A legacy pointer without active_workflows remains readable.
     writeFileSync(
@@ -73,6 +75,79 @@ test("current pointer merges parallel workflows and rejects ambiguous reads", ()
     result = run(project, work, ["status"]);
     assert.equal(result.status, 0, result.stderr);
     assert.equal(JSON.parse(result.stdout).title, "alpha");
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(work, { recursive: true, force: true });
+  }
+});
+
+test("workflow use updates the pointer and refuses to hide a live claim", () => {
+  const project = mkdtempSync(join(tmpdir(), "aikit-workflow-use-project-"));
+  const work = mkdtempSync(join(tmpdir(), "aikit-workflow-use-work-"));
+  try {
+    for (const id of ["alpha", "beta"])
+      assert.equal(run(project, work, ["workflow-create", id, "--title", id, "--workflow", "feature"]).status, 0);
+    let result = run(project, work, ["workflow", "use", "beta", "--actor", "test"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).workflow_id, "beta");
+    result = run(project, work, ["status"]);
+    assert.equal(JSON.parse(result.stdout).title, "beta");
+
+    addTask(project, work, "alpha");
+    result = run(project, work, ["agent", "claim", "--workflow-id", "alpha", "--client-id", "client-alpha"]);
+    assert.equal(result.status, 0, result.stderr);
+    result = run(project, work, ["workflow", "use", "beta"]);
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /active claims remain in alpha/);
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+    rmSync(work, { recursive: true, force: true });
+  }
+});
+
+test("add-task targets an explicit workflow id or state path", () => {
+  const project = mkdtempSync(join(tmpdir(), "aikit-add-task-scope-project-"));
+  const work = mkdtempSync(join(tmpdir(), "aikit-add-task-scope-work-"));
+  try {
+    for (const id of ["alpha", "beta"])
+      assert.equal(run(project, work, ["workflow-create", id, "--title", id, "--workflow", "feature"]).status, 0);
+    let result = run(project, work, [
+      "add-task",
+      "B1",
+      "--workflow-id",
+      "beta",
+      "--title",
+      "beta task",
+      "--owner",
+      "backend",
+      "--phase",
+      "build",
+      "--acceptance",
+      "scoped",
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    const beta = JSON.parse(readFileSync(join(work, "workflows/beta/state/workflow.json"), "utf8"));
+    assert.equal(beta.tasks[0].id, "B1");
+    const alphaState = join(work, "workflows/alpha/state/workflow.json");
+    result = run(project, work, [
+      "add-task",
+      "A1",
+      "--state",
+      alphaState,
+      "--title",
+      "alpha task",
+      "--owner",
+      "backend",
+      "--phase",
+      "build",
+      "--acceptance",
+      "inline state",
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    const alpha = JSON.parse(readFileSync(alphaState, "utf8"));
+    assert.equal(alpha.tasks[0].id, "A1");
+    const current = JSON.parse(readFileSync(join(work, "state/current.json"), "utf8"));
+    assert.equal(current.workflow_state, join(work, "workflows/beta/state/workflow.json"));
   } finally {
     rmSync(project, { recursive: true, force: true });
     rmSync(work, { recursive: true, force: true });

@@ -71,6 +71,7 @@ const owner = option("--owner");
 const workerId = option("--worker-id");
 const clientId = option("--client-id");
 const once = argv.includes("--once");
+const watch = argv.includes("--watch") || argv.includes("--daemon");
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const artifactForRole: Record<PluginRole, ArtifactKind> = {
@@ -110,7 +111,7 @@ export function prompt(role: PluginRole, input: string, output: string, contextM
     role === "planner"
       ? `The plan JSON must use exactly these fields: version, kind="plan", workflow_id, actor, goal, and tasks. Each task must use id, title, owner, phase, needs, acceptance, files, and tags. Task owner must be one of these agent roles: ${[...engine.roleNames()].join(", ")}. Never use generic owner names such as executor or implementer.`
       : role === "executor"
-        ? 'The result JSON must use exactly these fields: version, kind="result", workflow_id, actor, task, attempt_id, status, summary, changed_paths, commands, and optional branch. status must be exactly "pass" or "fail". Do not use completed, files_changed, acceptance, or other alternative field names.'
+        ? 'The result JSON must use exactly these fields: version, kind="result", workflow_id, actor, task, attempt_id, status, summary, changed_paths, commands, and optional nullable branch (a string or null). status must be exactly "pass" or "fail". Do not use completed, files_changed, acceptance, or other alternative field names.'
         : role === "reviewer"
           ? 'The review JSON must use exactly these fields: version, kind="review", workflow_id, actor, task, verdict, notes. verdict must be exactly "approve" or "changes-requested". Do not use status, summary, findings, or evidence field names.'
           : role === "qa"
@@ -121,12 +122,17 @@ export function prompt(role: PluginRole, input: string, output: string, contextM
     `You are the ${role} plugin for AI-Kit.`,
     `Read the JSON assignment at ${input}.`,
     context
-      ? "The assignment's context_manifest sources (role contract, skills, plan/tasks/roadmap) are inlined below — do not re-read them; only use file tools for the project source files you need to inspect or change."
+      ? "The assignment's context_manifest sources (role contract, skills, plan, roadmap, and the current task with direct dependency state) are inlined below — do not re-read them; only use file tools for the project source files you need to inspect or change."
       : "When the assignment input has a context_manifest, read that JSON and load only the sources listed under its `context.included` — a ranked, token-budgeted selection. You do not need the other sources.",
     `Perform only the assigned role work.`,
     "For QA or review, inspect the assignment acceptance criteria, changed files, and evidence paths before deciding.",
     `Write exactly one valid ${artifactForRole[role]} JSON artifact to ${output}.`,
     ...(artifactContract ? [artifactContract] : []),
+    ...(role === "executor"
+      ? [
+          "For a retry (attempt > 1), do not report pass unless at least one declared task file was actually changed; the control plane verifies this against the worktree.",
+        ]
+      : []),
     "Make the final response exactly the same JSON object, with no markdown fences or commentary.",
     "The provider wrapper writes the final response to the output artifact path. Do not use file tools to create or edit that artifact path; use file tools only for assigned project files.",
     "Do not modify workflow state or communicate with other agents.",
@@ -216,8 +222,8 @@ if (isMain) {
     if (workerId && stopRequested(workerId)) break;
     const result = await runOnce(role, selectedPlugin, workflowId, clientId ?? `${role}:${selectedPlugin}`);
     if (workerId) markWorker(workerId, result.task ?? null);
-    if (once || role === "planner" || result.claimed === null || result.status === "failed") break;
-    await wait(250);
+    if (once || (!watch && (role === "planner" || result.claimed === null || result.status === "failed"))) break;
+    await wait(result.claimed === null ? 1000 : 250);
   }
   if (workerId) markWorker(workerId, null, true);
 }

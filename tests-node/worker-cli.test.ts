@@ -99,3 +99,39 @@ test("worker stop terminates an in-flight provider process", () => {
   const recordPath = join(work, "run", "workers", `${worker.id}.json`);
   assert.equal(JSON.parse(readFileSync(recordPath, "utf8")).status, "stopped");
 });
+
+test("worker watch stays alive while no task is runnable", () => {
+  const work = mkdtempSync(join(tmpdir(), "worker-watch-"));
+  const home = mkdtempSync(join(tmpdir(), "worker-watch-home-"));
+  mkdirSync(join(home, "plugins", "executor"), { recursive: true });
+  writeFileSync(
+    join(home, "plugins", "executor", "stub.json"),
+    JSON.stringify({
+      version: 1,
+      id: "stub",
+      role: "executor",
+      transport: "cli",
+      command: [process.execPath, "-e", "process.exit(0)", "{input}", "{output}", "{prompt}"],
+    }),
+  );
+  let out = runTarget(KIT_CLI, ["init", "--title", "Watch workflow", "--workflow", "feature"], work, {
+    AIKIT_HOME: home,
+  });
+  assert.equal(out.status, 0, out.stderr);
+  out = runTarget(
+    CLI,
+    ["start", "--workflow-id", "default", "--role", "executor", "--plugin", "stub", "--watch"],
+    work,
+    {
+      AIKIT_HOME: home,
+    },
+  );
+  assert.equal(out.status, 0, out.stderr);
+  const worker = JSON.parse(out.stdout);
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+  out = runTarget(CLI, ["status", worker.id], work, { AIKIT_HOME: home });
+  assert.equal(out.status, 0, out.stderr);
+  assert.equal(JSON.parse(out.stdout).status, "running");
+  out = runTarget(CLI, ["stop", worker.id], work, { AIKIT_HOME: home });
+  assert.equal(out.status, 0, out.stderr);
+});

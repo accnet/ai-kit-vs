@@ -22,7 +22,7 @@ test("Codex reviewer writes the final JSON artifact without project write access
     "model_reasoning_effort=low",
     "--output-last-message",
     "{output}",
-    "{prompt}",
+    "-",
   ]);
 });
 
@@ -37,7 +37,10 @@ test("Codex planner writes a low-reasoning plan artifact", () => {
 
 test("Codex executor writes its result artifact", () => {
   const plugin = JSON.parse(readFileSync(join(REPO, ".ai/plugins/executor/codex.json"), "utf8"));
+  assert.equal(plugin.prompt_transport, "stdin");
   assert.ok(plugin.command.includes("--output-last-message"));
+  assert.ok(plugin.command.includes("-"));
+  assert.equal(plugin.command.includes("{prompt}"), false);
   assert.ok(plugin.command.includes("--add-dir"));
   assert.ok(plugin.command.includes("{work}"));
   assert.ok(plugin.command.includes("{output}"));
@@ -52,6 +55,7 @@ test("reviewer prompt names the strict review artifact schema", () => {
 test("executor prompt names the strict result artifact schema", () => {
   const value = prompt("executor", "/tmp/assignment.json", "/tmp/result.json");
   assert.match(value, /status must be exactly "pass" or "fail"/);
+  assert.match(value, /optional nullable branch/);
   assert.match(value, /Do not use completed, files_changed, acceptance/);
   assert.match(value, /wrapper writes the final response/);
 });

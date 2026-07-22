@@ -220,10 +220,22 @@ appropriate; users do not need to invoke a batch command.
 
 ## Daily Workflow
 
+Select a workflow through the state manager. The command updates the locked
+pointer and refuses to hide a live claim in another workflow:
+
+```bash
+ai-kit workflow use adr005
+ai-kit --state .ai-work/workflows/adr005/state/workflow.json status
+```
+
+When more than one workflow has live claims, keep using explicit
+`--state <path>` or `--workflow-id <id>`; do not edit `state/current.json`.
+
 Create a task with an explicit owner, phase, and acceptance criterion:
 
 ```bash
 ai-kit add-task T1 \
+  --workflow-id adr005 \
   --title "Build the feature" \
   --owner backend \
   --phase build \
@@ -245,7 +257,7 @@ Run workers and gates when provider plugins are configured:
 
 ```bash
 ai-kit-worker list --workflow-id default
-ai-kit-worker start --workflow-id default --role executor
+ai-kit-worker start --workflow-id default --role executor --watch
 ai-kit-gate default --once
 ```
 
@@ -263,6 +275,15 @@ commands instead of editing workflow state directly.
 
 Use the state manager for lifecycle transitions. Do not hand-edit workflow
 JSON under `.ai-work/workflows/`.
+
+Retire duplicate or superseded work without deleting its history:
+
+```bash
+ai-kit --state .ai-work/workflows/default/state/workflow.json \
+  transition MY1 retire --actor planner --detail "superseded by SA36"
+```
+
+Retirement is rejected when the task has a live claim or active dependents.
 
 ## VS Code And Agent Bridges
 

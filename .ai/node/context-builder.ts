@@ -8,9 +8,11 @@
 // token-budgeted selection over every file it gathered.
 
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   displayPath,
+  load,
   PROJECT_ROOT,
   resolveProjectPath,
   routeTask,
@@ -51,8 +53,43 @@ export function buildBundle(task: Task, statePath: string, budget?: number): Con
   const decisions = listMemory("decision").map((entry) => entry.path);
   const architecture = [".ai/engine/state-schema.md", ...decisions].filter(exists);
 
-  // Requirement: the task's acceptance criteria and the planning documents.
-  const docs = ["roadmap/roadmap.md", "plan/plan.md", "tasks/tasks.md"].map((name) => `${root}/${name}`);
+  // Requirement: keep task context bounded to the current task and its direct
+  // dependencies. The historical tasks.md remains available to humans but is
+  // deliberately excluded from provider prompts.
+  const state = load<{ tasks: Task[] }>(statePath);
+  const dependencies = (task.needs ?? [])
+    .map((id) => state.tasks.find((item) => item.id === id))
+    .filter((item): item is Task => !!item);
+  const requirementPath = join(workspaceOf(statePath), "context", `${task.id}-requirements.md`);
+  mkdirSync(join(workspaceOf(statePath), "context"), { recursive: true });
+  const requirementText = [
+    `# Task Context: ${task.id}`,
+    "",
+    `- Title: ${task.title}`,
+    `- Owner: ${task.owner}`,
+    `- Phase: ${task.phase}`,
+    `- Status: ${task.status}`,
+    `- Dependencies: ${(task.needs ?? []).join(", ") || "none"}`,
+    "",
+    "## Acceptance",
+    ...(task.acceptance ?? []).map((item) => `- ${item}`),
+    "",
+    "## Declared Files",
+    ...(task.files ?? []).map((item) => `- ${item}`),
+    "",
+    "## Direct Dependency State",
+    ...(dependencies.length
+      ? dependencies.flatMap((item) => [
+          `### ${item.id}: ${item.title}`,
+          `- Status: ${item.status}`,
+          `- Acceptance: ${(item.acceptance ?? []).join("; ")}`,
+        ])
+      : ["- none"]),
+    "",
+  ].join("\n");
+  writeFileSync(requirementPath, requirementText);
+  const docs = ["roadmap/roadmap.md", "plan/plan.md"].map((name) => `${root}/${name}`);
+  docs.push(displayPath(requirementPath));
   const requirement = { acceptance: task.acceptance ?? [], docs };
 
   // Memory: the most recent durable entries.

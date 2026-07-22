@@ -111,6 +111,7 @@ function runProcess(
   cwd: string,
   timeoutMs: number,
   env: NodeJS.ProcessEnv | undefined,
+  stdin: string | undefined,
   onHeartbeat?: () => void,
   heartbeatMs?: number,
   stream?: boolean,
@@ -123,8 +124,9 @@ function runProcess(
       cwd,
       env,
       windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     });
+    if (stdin !== undefined) child.stdin?.end(stdin);
     let stdout = "";
     let stderr = "";
     let timedOut = false;
@@ -199,7 +201,13 @@ function describe(outcome: AdapterOutcome, run: RunResult): string {
 // and resolves a single normalized result. Never rejects for provider failures —
 // callers branch on `result.ok` / `result.outcome`.
 export async function invokeProvider(plugin: Plugin, options: InvokeOptions): Promise<AdapterResult> {
-  const command = pluginCommand(plugin, options.input, options.output, options.prompt);
+  const promptTransport = plugin.prompt_transport ?? "argv";
+  const command = pluginCommand(
+    plugin,
+    options.input,
+    options.output,
+    promptTransport === "argv" ? options.prompt : "",
+  );
   const timeoutMs = options.timeoutMs ?? plugin.timeout_ms ?? DEFAULT_TIMEOUT_MS;
   const maxAttempts = (options.retries ?? plugin.retries ?? 0) + 1;
   const cwd = options.cwd ?? PROJECT_ROOT;
@@ -221,6 +229,7 @@ export async function invokeProvider(plugin: Plugin, options: InvokeOptions): Pr
       cwd,
       timeoutMs,
       options.env,
+      promptTransport === "stdin" ? options.prompt : undefined,
       options.onHeartbeat,
       options.heartbeatMs,
       options.stream,

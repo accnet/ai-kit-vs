@@ -18,6 +18,7 @@ import {
 import { PluginRole } from "./artifacts.js";
 import { loadPlugin } from "./plugins.js";
 import { configuredPluginId } from "./models.js";
+import { recoverExpiredClaims } from "./board.js";
 
 const directory = () => {
   const path = join(WORK, "run", "workers");
@@ -46,6 +47,12 @@ function refresh(path: string, record: any) {
     record.current_task = null;
     event(record, record.status, "process is no longer running");
     save(path, record);
+    try {
+      recoverExpiredClaims(record.workflow_id);
+    } catch {
+      // Worker lifecycle reporting must remain readable even if the workflow
+      // state is unavailable or belongs to another project.
+    }
   }
   return record;
 }
@@ -61,7 +68,13 @@ export const listWorkers = (workflowId?: string) =>
       return refresh(path, load<any>(path));
     })
     .filter((x) => !workflowId || x.workflow_id === workflowId);
-export function startWorker(pluginId: string, workflowId: string, owner?: string, role: PluginRole = "executor") {
+export function startWorker(
+  pluginId: string,
+  workflowId: string,
+  owner?: string,
+  role: PluginRole = "executor",
+  watch = false,
+) {
   if (
     !loadRegistry().workflows.some((item: any) => item.id === workflowId) &&
     !existsSync(join(WORK, "workflows", workflowId, "state", "workflow.json"))
@@ -80,6 +93,7 @@ export function startWorker(pluginId: string, workflowId: string, owner?: string
     role,
     workflow_id: workflowId,
     owner: owner ?? null,
+    watch,
     pid: null,
     status: "starting",
     current_task: null,
@@ -104,6 +118,7 @@ export function startWorker(pluginId: string, workflowId: string, owner?: string
     "--client-id",
     id,
     ...(owner ? ["--owner", owner] : []),
+    ...(watch ? ["--watch"] : []),
   ];
   let child;
   try {
@@ -193,7 +208,13 @@ if (isMain) {
         throw new Error("--role must be one of planner, executor, qa, reviewer");
       const role = roleName as PluginRole;
       const plugin = opt("--plugin") ?? configuredPluginId(role);
-      output = startWorker(plugin, workflowId, opt("--owner"), role);
+      output = startWorker(
+        plugin,
+        workflowId,
+        opt("--owner"),
+        role,
+        argv.includes("--watch") || argv.includes("--daemon"),
+      );
     } else if (sub === "stop") {
       if (!positional) throw new Error("usage: worker stop <worker-id>");
       output = stopWorker(positional);
@@ -204,7 +225,7 @@ if (isMain) {
       output = workerStatus(positional);
     } else {
       throw new Error(
-        "usage: worker <start|stop|list|status> [--workflow-id ID] [--plugin ID] [--role ROLE] [--owner ROLE]",
+        "usage: worker <start|stop|list|status> [--workflow-id ID] [--plugin ID] [--role ROLE] [--owner ROLE] [--watch]",
       );
     }
     console.log(JSON.stringify(output, null, 2));

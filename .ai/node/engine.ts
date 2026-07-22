@@ -68,6 +68,7 @@ const STATUSES = new Set([
   "review-approved",
   "done",
   "replaced",
+  "retired",
   "blocked",
 ]);
 export type TaskStatus =
@@ -78,6 +79,7 @@ export type TaskStatus =
   | "review-approved"
   | "done"
   | "replaced"
+  | "retired"
   | "blocked";
 const TRANSITIONS: Record<string, [Set<TaskStatus>, TaskStatus]> = {
   start: [new Set(["todo"]), "in-progress"],
@@ -88,6 +90,7 @@ const TRANSITIONS: Record<string, [Set<TaskStatus>, TaskStatus]> = {
   close: [new Set(["review-approved"]), "done"],
   "micro-close": [new Set(["implementation-complete", "qa-passed"]), "done"],
   replace: [new Set(["qa-passed"]), "replaced"],
+  retire: [new Set(["todo", "blocked", "in-progress", "done"]), "retired"],
   block: [new Set(["todo", "in-progress", "implementation-complete", "qa-passed", "review-approved"]), "blocked"],
   unblock: [new Set(["blocked"]), "todo"],
 };
@@ -98,6 +101,7 @@ export interface Claim {
   attempt_id: string;
   claimed_at: string;
   lease_expires_at: string;
+  worktree_before?: Record<string, string>;
 }
 export interface Task {
   id: string;
@@ -115,6 +119,7 @@ export interface Task {
   claim?: Claim | null;
   implementation_client?: string;
   implementation_attempt?: string;
+  worktree_baseline?: Record<string, string>;
   remediation_for?: string;
 }
 export interface Event {
@@ -289,12 +294,7 @@ export function routeTask(task: Task, statePath: string) {
     tags: task.tags,
     role_contract: `.ai/agents/${task.owner}`,
     skills,
-    context: [
-      displayPath(join(root, "plan", "plan.md")),
-      displayPath(join(root, "tasks", "tasks.md")),
-      ".ai/engine/state-schema.md",
-      ...task.files,
-    ],
+    context: [displayPath(join(root, "plan", "plan.md")), ".ai/engine/state-schema.md", ...task.files],
   };
 }
 
@@ -396,7 +396,9 @@ function managedState(path: string) {
   const item = relative(WORK, resolve(path));
   return item && !item.startsWith("..") && !isAbsolute(item);
 }
-function writeCurrent(state: State, path: string) {
+export type SaveOptions = { preserveCurrent?: boolean };
+
+function writeCurrent(state: State, path: string, options: SaveOptions = {}) {
   if (!managedState(path)) return;
   const lock = `${CURRENT}.lock`;
   acquire(lock);
@@ -412,7 +414,12 @@ function writeCurrent(state: State, path: string) {
     const relativeState = relative(WORK, resolve(path)).split(sep),
       workflowId = relativeState[0] === "workflows" ? relativeState[1] : displayPath(path),
       activeWorkflows = { ...(current.active_workflows ?? {}) } as Record<string, any>,
-      activeTasks = state.tasks.filter((task) => task.status === "in-progress").map((task) => task.id);
+      activeTasks = state.tasks
+        .filter(
+          (task) =>
+            task.status === "in-progress" && !!task.claim && Date.parse(task.claim.lease_expires_at) > Date.now(),
+        )
+        .map((task) => task.id);
     if (activeTasks.length)
       activeWorkflows[workflowId] = {
         workflow_state: displayPath(path),
@@ -422,14 +429,16 @@ function writeCurrent(state: State, path: string) {
         updated_at: now(),
       };
     else delete activeWorkflows[workflowId];
+    const currentPath = current.workflow_state;
+    const preserveSelection = options.preserveCurrent && !!currentPath && currentPath !== displayPath(path);
     const payload = {
       ...current,
       version: 2,
       project_root: PROJECT_ROOT,
-      workflow_state: displayPath(path),
-      title: state.title,
-      workflow: state.workflow,
-      active_tasks: activeTasks,
+      workflow_state: preserveSelection ? currentPath : displayPath(path),
+      title: preserveSelection ? current.title : state.title,
+      workflow: preserveSelection ? current.workflow : state.workflow,
+      active_tasks: preserveSelection ? (current.active_tasks ?? []) : activeTasks,
       active_workflows: activeWorkflows,
       updated_at: now(),
     };
@@ -441,7 +450,7 @@ function writeCurrent(state: State, path: string) {
     release(lock);
   }
 }
-export function save(state: State, path: string, expected?: number) {
+export function save(state: State, path: string, expected?: number, options: SaveOptions = {}) {
   assertWorkProject();
   const lock = `${path}.lock`;
   acquire(lock);
@@ -451,7 +460,7 @@ export function save(state: State, path: string, expected?: number) {
   } finally {
     release(lock);
   }
-  writeCurrent(state, path);
+  writeCurrent(state, path, options);
   syncWorkflowDocs(state, path);
 }
 
@@ -469,7 +478,7 @@ export function syncWorkflowDocs(state: State, path: string) {
   const tasks = state.tasks
     .map(
       (task) =>
-        `- [${task.status === "done" ? "x" : " "}] ${task.id} ${markdownText(task.title)} | owner: ${task.owner} | phase: ${task.phase} | status: ${task.status} | needs: ${task.needs.join(", ") || "-"} | files: ${task.files.join(", ") || "-"}\n` +
+        `- [${task.status === "done" ? "x" : task.status === "retired" ? "~" : " "}] ${task.id} ${markdownText(task.title)} | owner: ${task.owner} | phase: ${task.phase} | status: ${task.status} | needs: ${task.needs.join(", ") || "-"} | files: ${task.files.join(", ") || "-"}\n` +
         task.acceptance.map((criterion) => `  - Accept: ${markdownText(criterion)}`).join("\n"),
     )
     .join("\n");
@@ -641,7 +650,7 @@ function taskFromInput(input: any): Task {
   };
 }
 
-export function addTasks(path: string, inputs: any[]) {
+export function addTasks(path: string, inputs: any[], options: SaveOptions = {}) {
   if (!inputs.length) throw new EngineError("add-tasks requires at least one task");
   const state = load<State>(path);
   const tasks = taskMap(state);
@@ -664,12 +673,12 @@ export function addTasks(path: string, inputs: any[]) {
     const input = inputs[index];
     event(next, path, "add-task", task, input.actor ?? "planner", null, "todo", "task added");
   }
-  save(next, path, inputs[0]?.expectedRevision ?? state.revision);
+  save(next, path, inputs[0]?.expectedRevision ?? state.revision, options);
   return additions;
 }
 
-export function addTask(path: string, input: any) {
-  return addTasks(path, [input])[0];
+export function addTask(path: string, input: any, options: SaveOptions = {}) {
+  return addTasks(path, [input], options)[0];
 }
 function validateEvidence(task: Task, action: string, items: string[]) {
   const expectedKind = action === "qa-pass" ? "qa" : "review";
@@ -701,6 +710,7 @@ export function transition(
   evidence: string[] = [],
   expectedRevision?: number,
   claim?: any,
+  options: SaveOptions = {},
 ) {
   const state = load<State>(path);
   validate(state);
@@ -710,7 +720,17 @@ export function transition(
   if (!rule || !rule[0].has(task.status)) throw new EngineError(`cannot ${action} ${id} from ${task.status}`);
   if (action === "start" && !runnable(task, taskMap(state)))
     throw new EngineError(`task ${id} is blocked by unfinished dependencies`);
-  if (action === "block" && !detail) throw new EngineError("block requires --detail");
+  if (["block", "retire"].includes(action) && !detail) throw new EngineError(`${action} requires --detail`);
+  if (action === "retire") {
+    if (task.claim && Date.parse(task.claim.lease_expires_at) > Date.now())
+      throw new EngineError(`cannot retire ${id} while it has an active claim`);
+    const dependents = state.tasks
+      .filter(
+        (item) => item.id !== id && item.needs.includes(id) && !["done", "replaced", "retired"].includes(item.status),
+      )
+      .map((item) => item.id);
+    if (dependents.length) throw new EngineError(`cannot retire ${id}; active dependents: ${dependents.join(", ")}`);
+  }
   if (["qa-pass", "review-approve", "replace"].includes(action)) {
     if (!evidence.length) throw new EngineError(`${action} requires at least one --evidence path`);
     validateEvidence(task, action, evidence);
@@ -722,8 +742,11 @@ export function transition(
   if (action === "start") {
     task.attempts++;
     task.claim = claim ?? null;
+    if (task.worktree_baseline === undefined && task.claim?.worktree_before) {
+      task.worktree_baseline = task.attempts === 1 ? task.claim.worktree_before : {};
+    }
   }
-  if (["complete", "block"].includes(action)) {
+  if (["complete", "block", "retire"].includes(action)) {
     if (task.claim) {
       task.implementation_client = task.claim.client_id;
       task.implementation_attempt = task.claim.attempt_id;
@@ -732,11 +755,18 @@ export function transition(
   }
   syncPhases(state);
   event(state, path, action, task, actor, previous, task.status, detail);
-  save(state, path, expectedRevision ?? state.revision);
+  save(state, path, expectedRevision ?? state.revision, options);
   return task;
 }
 
-export function replaceWithRemediation(path: string, id: string, actor: string, detail: string, evidence: string[]) {
+export function replaceWithRemediation(
+  path: string,
+  id: string,
+  actor: string,
+  detail: string,
+  evidence: string[],
+  options: SaveOptions = {},
+) {
   const state = load<State>(path);
   validate(state);
   const task = taskMap(state).get(id);
@@ -775,7 +805,7 @@ export function replaceWithRemediation(path: string, id: string, actor: string, 
   syncPhases(state);
   event(state, path, "replace", task, actor, previous, "replaced", detail);
   event(state, path, "add-task", remediation, "state-manager", null, "todo", `remediation for ${id}`);
-  save(state, path, state.revision);
+  save(state, path, state.revision, options);
   return remediation;
 }
 export function createWorkflow(id: string, title: string, workflow: string, actor: string) {
@@ -798,7 +828,84 @@ export function createWorkflow(id: string, title: string, workflow: string, acto
     release(lock);
   }
 }
-export function makeClaim(clientId: string, task: Task, leaseSeconds = 300) {
+
+function activeTaskIds(state: State) {
+  return state.tasks
+    .filter(
+      (task) => task.status === "in-progress" && !!task.claim && Date.parse(task.claim.lease_expires_at) > Date.now(),
+    )
+    .map((task) => task.id);
+}
+
+export function useWorkflow(id: string, actor = "operator") {
+  workflowId(id);
+  const path = workflowStatePath(id);
+  const state = load<State>(path);
+  validate(state);
+  const lock = `${CURRENT}.lock`;
+  acquire(lock);
+  try {
+    let current: Record<string, any> = {};
+    if (existsSync(CURRENT)) {
+      try {
+        current = JSON.parse(readFileSync(CURRENT, "utf8"));
+      } catch {
+        throw new EngineError(`invalid AI-Kit current workflow pointer: ${CURRENT}`);
+      }
+    }
+    const activeWorkflows = { ...(current.active_workflows ?? {}) } as Record<string, any>;
+    const knownWorkflows = new Set([
+      ...Object.keys(activeWorkflows),
+      ...loadRegistry().workflows.map((item: { id: string }) => item.id),
+    ]);
+    for (const workflow of knownWorkflows) {
+      if (workflow === id) continue;
+      const otherPath = workflowStatePath(workflow);
+      if (!existsSync(otherPath)) {
+        delete activeWorkflows[workflow];
+        continue;
+      }
+      const other = load<State>(otherPath);
+      validate(other);
+      const activeTasks = activeTaskIds(other);
+      if (activeTasks.length)
+        throw new EngineError(
+          `cannot select workflow ${id}; active claims remain in ${workflow}: ${activeTasks.join(", ")}. Use --state or --workflow-id explicitly.`,
+        );
+      delete activeWorkflows[workflow];
+    }
+    const activeTasks = activeTaskIds(state);
+    if (activeTasks.length)
+      activeWorkflows[id] = {
+        workflow_state: displayPath(path),
+        title: state.title,
+        workflow: state.workflow,
+        active_tasks: activeTasks,
+        updated_at: now(),
+      };
+    else delete activeWorkflows[id];
+    const payload = {
+      ...current,
+      version: 2,
+      project_root: PROJECT_ROOT,
+      workflow_state: displayPath(path),
+      title: state.title,
+      workflow: state.workflow,
+      active_tasks: activeTasks,
+      active_workflows: activeWorkflows,
+      updated_at: now(),
+      last_actor: actor,
+    };
+    mkdirSync(dirname(CURRENT), { recursive: true });
+    const temporary = `${CURRENT}.tmp`;
+    writeFileSync(temporary, `${JSON.stringify(payload, null, 2)}\n`);
+    renameSync(temporary, CURRENT);
+    return { workflow_id: id, state: displayPath(path), active_tasks: activeTasks };
+  } finally {
+    release(lock);
+  }
+}
+export function makeClaim(clientId: string, task: Task, leaseSeconds = 300): Claim {
   // Allow ":" so the standard "role:id" actor convention (e.g. "executor:codex")
   // is a valid client id. It is not used in filesystem paths.
   if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(clientId)) throw new EngineError("client ID contains unsupported characters");

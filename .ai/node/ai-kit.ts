@@ -28,6 +28,7 @@ import {
   validate,
   workspace,
   workflowStatePath,
+  useWorkflow,
   roleNames,
 } from "./engine.js";
 import {
@@ -52,6 +53,13 @@ if (argv[0] === "--state") {
   argv.splice(0, 2);
 }
 const command = argv.shift();
+const inlineStateIndex = argv.indexOf("--state");
+if (inlineStateIndex >= 0) {
+  const inlineState = argv[inlineStateIndex + 1];
+  if (!inlineState || inlineState.startsWith("--")) throw new EngineError("--state requires a workflow state path");
+  statePath = inlineState;
+  argv.splice(inlineStateIndex, 2);
+}
 const explicitState = statePath !== STATE;
 const workflowState = () => (explicitState ? statePath : currentWorkflowStatePath(statePath));
 
@@ -80,6 +88,7 @@ Options:
   --idea <text>        Feature or project goal (required)
   --owner <role>       Implementation owner (required)
   --acceptance <text> Acceptance criterion (repeatable, required)
+  --workflow-id <id>   Target workflow
   --workflow <id>      Workflow type (default: feature)
   --phase <id>         Implementation phase (default: build)
   --files <path>       Declared file path (repeatable)
@@ -98,6 +107,19 @@ Options:
   --workflow <id>      Workflow type (default: feature)
   --actor <id>         Event actor
   -h, --help           Show this help`,
+  workflow: `Usage: ai-kit workflow use <id> [options]
+
+Selects a workflow through the locked current-workflow pointer.
+Selection refuses to hide active claims in another workflow.
+
+Options:
+  --actor <id>         Pointer update actor
+  -h, --help           Show this help`,
+  "workflow use": `Usage: ai-kit workflow use <id> [options]
+
+Options:
+  --actor <id>         Pointer update actor
+  -h, --help           Show this help`,
   "add-task": `Usage: ai-kit add-task <task-id> --title <title> --owner <role> --phase <phase> [options]
 
 Options:
@@ -109,6 +131,7 @@ Options:
   --files <path>       Declared file path (repeatable)
   --tags <tag>         Task tag (repeatable)
   --actor <id>         Event actor
+  --workflow-id <id>   Target workflow
   -h, --help           Show this help`,
   "micro-task": `Usage: ai-kit micro-task <task-id> --title <title> --owner <role> --files <path> [options]
 
@@ -127,7 +150,7 @@ Options:
 
 Options:
   --actor <id>         Transition actor (required)
-  --detail <text>      Transition detail
+  --detail <text>      Transition detail (required for block/retire)
   --evidence <path>    Evidence path (repeatable)
   -h, --help           Show this help`,
   route: `Usage: ai-kit route <task-id>
@@ -267,6 +290,7 @@ function topHelp(): string {
     "init",
     "plan",
     "workflow-create",
+    "workflow",
     "add-task",
     "micro-task",
     "ready",
@@ -293,7 +317,12 @@ function topHelp(): string {
 }
 
 function printHelp(requested?: string): never {
-  const key = requested === "memory" && argv[0] && !argv[0].startsWith("-") ? `memory ${argv[0]}` : requested;
+  const key =
+    requested === "memory" && argv[0] && !argv[0].startsWith("-")
+      ? `memory ${argv[0]}`
+      : requested === "workflow" && argv[0] && !argv[0].startsWith("-")
+        ? `workflow ${argv[0]}`
+        : requested;
   const text =
     (key && HELP_TEXT[key]) ||
     (requested ? `Usage: ai-kit ${requested} [options]\n\nOptions:\n  -h, --help           Show this help` : topHelp());
@@ -448,7 +477,8 @@ const handlers: Record<string, () => unknown> = {
     return { project: PROJECT_ROOT, home: ROOT, work: WORK, copied, initializedProjectConfigs };
   },
   plan: () => {
-    const targetState = workflowState();
+    const targetWorkflowId = one("workflow-id");
+    const targetState = targetWorkflowId ? workflowStatePath(targetWorkflowId) : workflowState();
     if (existsSync(targetState) && !flag("force"))
       throw new EngineError(`state already exists: ${targetState}; use --force to replace`);
     const idea = one("idea", true)!,
@@ -510,7 +540,7 @@ const handlers: Record<string, () => unknown> = {
       `# Tasks\n\n- [ ] T1 Confirm scope and plan | owner: planner | phase: plan\n- [ ] T2 ${idea} | owner: ${one("owner", true)} | needs: T1 | phase: build\n  - Accept: ${acceptance.join("\n  - Accept: ")}\n`,
     );
     event(state, targetState, "plan", null, one("actor") ?? "planner", null, null, "idea converted to draft plan");
-    save(state, targetState);
+    save(state, targetState, undefined, { preserveCurrent: explicitState || !!targetWorkflowId });
     return {
       state: targetState,
       workspace: root,
@@ -520,6 +550,11 @@ const handlers: Record<string, () => unknown> = {
   },
   "workflow-create": () =>
     createWorkflow(argv[0], one("title", true)!, one("workflow") ?? "feature", one("actor") ?? "planner"),
+  workflow: () => {
+    const subcommand = argv.shift();
+    if (subcommand === "use") return useWorkflow(argv[0], one("actor") ?? "operator");
+    throw new EngineError("usage: ai-kit workflow use <id> [--actor ID]");
+  },
   "sync-docs": () => {
     const path = workflowState();
     const state = load<any>(path);
@@ -528,18 +563,24 @@ const handlers: Record<string, () => unknown> = {
     return { state: path, workspace: workspace(path) };
   },
   workflows: () => loadRegistry().workflows,
-  "add-task": () =>
-    addTask(workflowState(), {
-      id: argv[0],
-      title: one("title", true),
-      owner: one("owner", true),
-      phase: one("phase", true),
-      acceptance: many("acceptance"),
-      needs: many("needs"),
-      files: many("files"),
-      tags: many("tags"),
-      actor: one("actor") ?? "planner",
-    }),
+  "add-task": () => {
+    const targetWorkflowId = one("workflow-id");
+    return addTask(
+      targetWorkflowId ? workflowStatePath(targetWorkflowId) : workflowState(),
+      {
+        id: argv[0],
+        title: one("title", true),
+        owner: one("owner", true),
+        phase: one("phase", true),
+        acceptance: many("acceptance"),
+        needs: many("needs"),
+        files: many("files"),
+        tags: many("tags"),
+        actor: one("actor") ?? "planner",
+      },
+      { preserveCurrent: explicitState || !!targetWorkflowId },
+    );
+  },
   "micro-task": () => {
     const policy = microTaskPolicy();
     if (!policy.enabled) throw new EngineError("micro-tasks are disabled in project policy");
@@ -548,17 +589,21 @@ const handlers: Record<string, () => unknown> = {
     if (files.length > policy.maxFiles)
       throw new EngineError(`micro-task allows at most ${policy.maxFiles} file paths`);
     const workflowId = one("workflow-id");
-    const task = addTask(workflowId ? workflowStatePath(workflowId) : workflowState(), {
-      id: argv[0],
-      title: one("title", true),
-      owner: one("owner", true),
-      phase: one("phase") ?? "build",
-      acceptance: many("acceptance"),
-      needs: many("needs"),
-      files,
-      tags: [...new Set([...many("tags"), "micro"])],
-      actor: one("actor") ?? "micro-task",
-    });
+    const task = addTask(
+      workflowId ? workflowStatePath(workflowId) : workflowState(),
+      {
+        id: argv[0],
+        title: one("title", true),
+        owner: one("owner", true),
+        phase: one("phase") ?? "build",
+        acceptance: many("acceptance"),
+        needs: many("needs"),
+        files,
+        tags: [...new Set([...many("tags"), "micro"])],
+        actor: one("actor") ?? "micro-task",
+      },
+      { preserveCurrent: explicitState || !!workflowId },
+    );
     return { policy, task };
   },
   ready: () => {
@@ -566,7 +611,17 @@ const handlers: Record<string, () => unknown> = {
     return runnableTasks(state);
   },
   transition: () =>
-    transition(workflowState(), argv[0], argv[1], one("actor", true)!, one("detail") ?? "", many("evidence")),
+    transition(
+      workflowState(),
+      argv[0],
+      argv[1],
+      one("actor", true)!,
+      one("detail") ?? "",
+      many("evidence"),
+      undefined,
+      undefined,
+      { preserveCurrent: explicitState },
+    ),
   validate: () => {
     validate(load<any>(workflowState()));
     return { valid: true };
@@ -577,7 +632,7 @@ const handlers: Record<string, () => unknown> = {
     return state;
   },
   status: () => {
-    return boardStatus(undefined, workflowState());
+    return boardStatus(undefined, workflowState(), explicitState);
   },
   timeline: () => {
     const state = load<any>(workflowState());

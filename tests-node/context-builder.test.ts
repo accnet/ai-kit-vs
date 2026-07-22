@@ -20,6 +20,11 @@ test("buildBundle gathers all source groups plus a budgeted context", () => {
   assert.ok(bundle.architecture.includes(".ai/engine/state-schema.md"), "architecture must include the state contract");
   assert.deepEqual(bundle.requirement.acceptance, ["done"]);
   assert.ok(bundle.requirement.docs.some((d) => d.endsWith("plan/plan.md")));
+  assert.equal(
+    bundle.context.included.some((item) => item.path.endsWith("tasks/tasks.md")),
+    false,
+  );
+  assert.ok(bundle.requirement.docs.some((d) => d.endsWith("T1-requirements.md")));
   assert.ok(Array.isArray(bundle.memory));
   // Context Engine ran over the gathered files.
   assert.ok(bundle.context.included.length > 0);

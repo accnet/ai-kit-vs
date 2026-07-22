@@ -41,6 +41,7 @@ Run from the project root; state stays in `.ai-work/`:
 - `ai-kit roles` — list valid task owners and provider roles.
 - `ai-kit status` — workflow status and phases.
 - `ai-kit bind` — bind an existing external `.ai-work` directory to this project.
+- `ai-kit workflow use <id>` — select a workflow through the locked current pointer; it refuses to hide live claims.
 - `ai-kit ready` — tasks ready to work on.
 - `ai-kit show` — full state.
 - `ai-kit route <task-id>` — role contract, skills, and context for a task.
@@ -54,8 +55,9 @@ Run from the project root; state stays in `.ai-work/`:
 - `ai-kit watch --workflow-id <id> --after-cursor <n>` — stream newline-delimited
   event records for an editor bridge; persist the returned `cursor` and pass it
   on the next watch/poll so Codex does not replay Copilot events.
-- `ai-kit-worker start --workflow-id <id> --role executor` — run a provider worker.
+- `ai-kit-worker start --workflow-id <id> --role executor [--watch]` — run a provider worker; `--watch` keeps polling when no task is ready.
 - `ai-kit-gate <workflow-id> --once` — run QA and close tasks after reviewer approval.
+- `ai-kit --state <path> transition <task-id> retire --actor <id> --detail "..."` — retire superseded work without deleting history.
 
 ## Natural-Language Setup Trigger
 

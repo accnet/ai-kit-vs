@@ -3,6 +3,7 @@
   "id": "codex",
   "role": "planner",
   "transport": "cli",
+  "prompt_transport": "stdin",
   "command": [
     "codex",
     "exec",
@@ -15,7 +16,7 @@
     "model_reasoning_effort=low",
     "--output-last-message",
     "{output}",
-    "{prompt}"
+    "-"
   ],
   "description": "Codex CLI planner adapter."
 }

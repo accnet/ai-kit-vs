@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import * as board from "../.ai/node/board.js";
 import { artifactPath, writeArtifact } from "../.ai/node/artifacts.js";
-import { CURRENT, load, PROJECT_ROOT, workflowStatePath } from "../.ai/node/engine.js";
+import { CURRENT, load, PROJECT_ROOT, save, workflowStatePath } from "../.ai/node/engine.js";
 
 test("Node board enforces a claimed attempt and independent gates", () => {
   const workflowId = `node-board-${Date.now().toString(36)}`;
@@ -201,6 +201,52 @@ test("Node claim reads routed skill sources and persists a scoped context manife
     board.getContext(workflowId, "T1", "context-executor", claim.claim.attempt_id).completion.required_action,
     "ai-kit agent result",
   );
+});
+
+test("retry result rejects completion when no declared file changed", () => {
+  const workflowId = `node-retry-noop-${Date.now().toString(36)}`;
+  board.createWorkflow("retry guard", "feature", workflowId, "planner");
+  board.addTask({
+    workflow_id: workflowId,
+    id: "T1",
+    title: "retry without a change",
+    owner: "backend",
+    phase: "build",
+    files: [".aikit-noop-file.txt"],
+    acceptance: ["must change a file"],
+  });
+  let claim = board.claimNext("retry-executor", workflowId) as any;
+  const path = workflowStatePath(workflowId);
+  const state = load<any>(path);
+  state.tasks[0].claim.lease_expires_at = "2000-01-01T00:00:00Z";
+  save(state, path, state.revision);
+  claim = board.claimNext("retry-executor", workflowId) as any;
+  assert.equal(load<any>(path).tasks[0].attempts, 2);
+  assert.throws(
+    () => board.submitResult(workflowId, "T1", "retry-executor", claim.claim.attempt_id, "reported pass"),
+    /no declared file changed/,
+  );
+  assert.equal(load<any>(path).tasks[0].status, "in-progress");
+});
+
+test("status recovers an expired claim to todo", () => {
+  const workflowId = `node-lease-recovery-${Date.now().toString(36)}`;
+  board.createWorkflow("lease recovery", "feature", workflowId, "planner");
+  board.addTask({
+    workflow_id: workflowId,
+    id: "T1",
+    title: "expired",
+    owner: "backend",
+    phase: "build",
+    acceptance: ["recovered"],
+  });
+  board.claimNext("dead-worker", workflowId);
+  const path = workflowStatePath(workflowId);
+  const state = load<any>(path);
+  state.tasks[0].claim.lease_expires_at = "2000-01-01T00:00:00Z";
+  save(state, path, state.revision);
+  assert.equal(board.status(workflowId).counts.todo, 1);
+  assert.equal(load<any>(path).tasks[0].claim, null);
 });
 
 test("status warns about dirty work without a claim and clears it for an active claim", () => {

@@ -16,7 +16,9 @@ export const ResultArtifact = base.extend({
   summary: z.string().min(1),
   changed_paths: z.array(z.string()).default([]),
   commands: z.array(z.string()).default([]),
-  branch: z.string().optional(),
+  // Provider adapters may not have a checked-out branch (for example Codex
+  // can emit an explicit null), so preserve both forms as valid metadata.
+  branch: z.string().nullable().optional(),
 });
 export const QaArtifact = base.extend({
   kind: z.literal("qa"),

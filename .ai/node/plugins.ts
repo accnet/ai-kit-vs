@@ -10,6 +10,7 @@ export class PluginError extends Error {}
 // A provider capability declaration: which roles it can fill, feature tags, and
 // whether it needs authentication. Purely descriptive metadata.
 export type PluginCapabilities = { roles?: string[]; features?: string[]; auth?: boolean };
+export type PromptTransport = "argv" | "stdin";
 
 export type Plugin = {
   version: 1;
@@ -19,6 +20,7 @@ export type Plugin = {
   // The standardized Provider interface. `command` is the invoke operation;
   // init/validate/capabilities are optional and let a provider self-describe.
   command: string[]; // invoke
+  prompt_transport?: PromptTransport;
   init?: string[]; // one-time prepare / auth
   validate?: string[]; // readiness check (exit 0 = ready)
   capabilities?: PluginCapabilities;
@@ -37,6 +39,7 @@ const validCommand = (value: unknown, required = false) =>
     : Array.isArray(value) && value.length > 0 && value.every((item) => typeof item === "string");
 const validStrings = (value: unknown) =>
   value === undefined || (Array.isArray(value) && value.every((item) => typeof item === "string"));
+const validPromptTransport = (value: unknown) => value === undefined || value === "argv" || value === "stdin";
 const validCapabilities = (value: unknown): boolean => {
   if (value === undefined) return true;
   if (typeof value !== "object" || value === null) return false;
@@ -63,6 +66,8 @@ export function loadPlugin(role: Role, id: string): Plugin {
     plugin.role !== role ||
     plugin.transport !== "cli" ||
     !validCommand(plugin.command, true) ||
+    !validPromptTransport(plugin.prompt_transport) ||
+    (plugin.prompt_transport === "stdin" && plugin.command.some((item) => item.includes("{prompt}"))) ||
     !validCommand(plugin.init) ||
     !validCommand(plugin.validate) ||
     !validCapabilities(plugin.capabilities) ||

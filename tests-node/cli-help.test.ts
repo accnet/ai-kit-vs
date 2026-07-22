@@ -24,8 +24,9 @@ test("CLI help exits successfully before validation or side effects", () => {
     const cases = [
       { args: ["--help"], marker: "Usage: ai-kit <command>" },
       { args: ["plan", "--help"], marker: "Usage: ai-kit plan" },
-      { args: ["add-task", "--help"], marker: "--title <text>" },
+      { args: ["add-task", "--help"], marker: "--workflow-id <id>" },
       { args: ["workflow-create", "--help"], marker: "--title <text>" },
+      { args: ["workflow", "use", "--help"], marker: "Usage: ai-kit workflow use" },
       { args: ["setup", "--help"], marker: "Usage: ai-kit setup" },
       { args: ["lock", "--help"], marker: "Usage: ai-kit lock" },
       { args: ["status", "--help"], marker: "Usage: ai-kit status" },

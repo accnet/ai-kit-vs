@@ -3,6 +3,7 @@
   "id": "codex",
   "role": "executor",
   "transport": "cli",
+  "prompt_transport": "stdin",
   "command": [
     "codex",
     "exec",
@@ -13,7 +14,7 @@
     "{work}",
     "--output-last-message",
     "{output}",
-    "{prompt}"
+    "-"
   ],
   "validate": ["codex", "--version"],
   "capabilities": { "roles": ["executor"], "features": ["code", "refactor", "test"], "auth": true },

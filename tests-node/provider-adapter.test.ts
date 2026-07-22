@@ -19,6 +19,7 @@ function fakeProvider(dir: string): string {
       "const mode = process.env.FAKE_MODE ?? 'ok';",
       "if (mode === 'fail') { console.error('boom'); process.exit(3); }",
       "if (mode === 'stdin-close') { readFileSync(0); writeFileSync(output, '{}\\n'); }",
+      "else if (mode === 'stdin-capture') { const prompt = readFileSync(0, 'utf8'); if (prompt.length !== 140000 || prompt[0] !== 'x') process.exit(4); writeFileSync(output, '{}\\n'); }",
       "else if (mode === 'hang') { setInterval(() => {}, 1000); }",
       "else if (mode === 'no-output') { process.exit(0); }",
       "else if (mode === 'sleep') { setTimeout(() => writeFileSync(output, '{}\\n'), 300); }",
@@ -69,6 +70,23 @@ test("adapter closes stdin when the provider prompt is passed as an argument", a
     timeoutMs: 1000,
     env: { ...process.env, FAKE_MODE: "stdin-close" },
   });
+  assert.equal(r.outcome, "ok");
+});
+
+test("adapter sends large prompts through stdin when the plugin requests it", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pa-stdin-large-"));
+  const prompt = "x".repeat(140_000);
+  const r = await invokeProvider(
+    plugin(fakeProvider(dir), {
+      prompt_transport: "stdin",
+      command: [process.execPath, fakeProvider(dir), "{input}", "{output}"],
+    }),
+    {
+      ...opts(dir),
+      prompt,
+      env: { ...process.env, FAKE_MODE: "stdin-capture" },
+    },
+  );
   assert.equal(r.outcome, "ok");
 });
 
