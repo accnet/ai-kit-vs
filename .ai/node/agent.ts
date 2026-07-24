@@ -7,6 +7,10 @@ import { EngineError, loadRegistry, workflowStatePath } from "./engine.js";
 // state or artifacts directly.
 export function claim(workflowId: string, clientId: string, owner?: string, leaseSeconds?: number) {
   const result: any = board.claimNext(clientId, workflowId, owner, leaseSeconds);
+  return withAssignment(workflowId, clientId, result);
+}
+
+function withAssignment(workflowId: string, clientId: string, result: any) {
   if (!result.claimed) return result;
   const assignment = artifactPath(workflowId, "assignment", `agent-${result.claimed}-${result.claim.attempt_id}`);
   writeArtifact(assignment, "assignment", {
@@ -20,6 +24,10 @@ export function claim(workflowId: string, clientId: string, owner?: string, leas
     input: result,
   });
   return { ...result, assignment };
+}
+
+export function claimTask(workflowId: string, clientId: string, taskId: string, leaseSeconds?: number) {
+  return withAssignment(workflowId, clientId, board.claimTask(clientId, workflowId, taskId, leaseSeconds));
 }
 
 export type CopilotFinishOptions = {

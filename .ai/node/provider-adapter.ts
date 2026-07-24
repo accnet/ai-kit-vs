@@ -24,10 +24,12 @@ export type AdapterOutcome =
   | "timeout" // killed after exceeding the deadline
   | "spawn-error" // command could not be launched (missing binary, EACCES, ...)
   | "nonzero-exit" // ran to completion but returned a non-zero status
-  | "no-output"; // exit 0 but the required artifact was not produced
+  | "no-output" // exit 0 but the required artifact was not produced
+  | "argv-too-large"; // prompt would exceed the safe per-argument budget
 
 // Outcomes worth retrying are transient; a contract violation (no-output) is not.
 const RETRYABLE: ReadonlySet<AdapterOutcome> = new Set(["timeout", "spawn-error", "nonzero-exit"]);
+const DEFAULT_MAX_PROMPT_BYTES = 96_000;
 
 export type AdapterResult = {
   outcome: AdapterOutcome;
@@ -192,6 +194,8 @@ function describe(outcome: AdapterOutcome, run: RunResult): string {
       return `provider exited with status ${run.status ?? "unknown"}${tail ? `: ${tail}` : ""}`;
     case "no-output":
       return "provider exited cleanly but wrote no artifact to the output path";
+    case "argv-too-large":
+      return "provider prompt exceeds the safe argv size; configure prompt_transport=stdin or reduce context";
     default:
       return "";
   }
@@ -208,6 +212,24 @@ export async function invokeProvider(plugin: Plugin, options: InvokeOptions): Pr
     options.output,
     promptTransport === "argv" ? options.prompt : "",
   );
+  if (
+    promptTransport === "argv" &&
+    Buffer.byteLength(options.prompt, "utf8") > (plugin.max_prompt_bytes ?? DEFAULT_MAX_PROMPT_BYTES)
+  ) {
+    return {
+      outcome: "argv-too-large",
+      ok: false,
+      exit_code: null,
+      signal: null,
+      duration_ms: 0,
+      attempts: 0,
+      output_path: options.output,
+      command,
+      stdout: "",
+      stderr: "",
+      error: describe("argv-too-large", { status: null, signal: null, stdout: "", stderr: "" }),
+    };
+  }
   const timeoutMs = options.timeoutMs ?? plugin.timeout_ms ?? DEFAULT_TIMEOUT_MS;
   const maxAttempts = (options.retries ?? plugin.retries ?? 0) + 1;
   const cwd = options.cwd ?? PROJECT_ROOT;

@@ -44,6 +44,27 @@ for VS Code, Copilot, Claude, Codex, Cursor, and Gemini. AI providers default
 to `off`; select them during setup with flags such as
 `--planner claude --executor codex`. The runtime remains in `~/ai-kit`.
 
+Project verification keeps the legacy `test_command`, `typecheck_command`,
+`build_command`, and `lint_command` fields and can add named checks under
+`verification.checks`. Named checks are included in QA evidence so migration
+and live-environment failures remain actionable.
+
+Canonical project knowledge is optional. When a project already has a
+Blueprint manifest, opt in during setup without making the `Blueprint/`
+directory mandatory:
+
+```bash
+ai-kit setup --knowledge-provider blueprint \
+  --blueprint-manifest Blueprint/blueprint.json
+ai-kit blueprint status
+ai-kit blueprint validate
+ai-kit blueprint resolve --id BP-001
+```
+
+AI-Kit stores only stable references and hashes in `.ai-work`; the documents
+remain in the project's canonical source directory. Projects that do not opt
+in keep `knowledge.provider: off` and retain the existing workflow behavior.
+
 Windows (PowerShell):
 
 ```powershell

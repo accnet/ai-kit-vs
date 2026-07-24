@@ -78,6 +78,25 @@ test("gate verification does not execute shell chaining from project config", ()
   assert.equal(existsSync(join(project, "pwned")), false);
 });
 
+test("gate classifies named migration and live failures for structured QA evidence", () => {
+  const migration = verify([{ name: "migration", command: 'node -e "process.exit(3)"' }], process.cwd());
+  assert.equal(migration.passed, false);
+  assert.equal(migration.failure_code, "needs-migration");
+  assert.equal(migration.checks[0].failure_code, "needs-migration");
+
+  const live = verify([{ name: "live-smoke", command: 'node -e "process.exit(3)"' }], process.cwd());
+  assert.equal(live.failure_code, "environment-unavailable");
+});
+
+test("gate errors are recorded as observable workflow events", () => {
+  const workflowId = `node-gate-error-${Date.now().toString(36)}`;
+  seed(workflowId, "codex");
+  board.recordGateError(workflowId, "T1", "gatekeeper", "qa", "synthetic gate failure");
+  const event = load<any>(workflowStatePath(workflowId)).events.at(-1);
+  assert.equal(event.action, "gate-error");
+  assert.match(event.detail, /synthetic gate failure/);
+});
+
 test("planning tasks pass QA without project verification commands", () => {
   const result = verifyTask({ phase: "plan" }, [], process.cwd());
   assert.equal(result.passed, true);

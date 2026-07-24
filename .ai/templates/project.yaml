@@ -4,6 +4,12 @@ project:
   stack: []
   source_dirs: []
 
+# Optional canonical project knowledge. `off` keeps projects independent of
+# any specific documentation layout; `blueprint` reads Blueprint/blueprint.json.
+knowledge:
+  provider: off
+  manifest: Blueprint/blueprint.json
+
 # Small fixes still use the control plane, but can skip planning and review.
 # Enable per project when this shortened lifecycle is appropriate.
 workflow:
@@ -23,3 +29,8 @@ verification:
   typecheck_command:
   build_command:
   lint_command:
+  # Optional named checks are appended to the legacy commands above.
+  # Their names classify gate evidence, for example migration or live-smoke.
+  # checks:
+  #   migration: npm run db:check
+  #   live-smoke: ./scripts/smoke.sh

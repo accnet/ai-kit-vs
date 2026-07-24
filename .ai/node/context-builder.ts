@@ -22,6 +22,8 @@ import {
 import { kitArray } from "./config.js";
 import { listMemory } from "./memory.js";
 import { assembleContext, type AssembledContext } from "./context.js";
+import { resolveBlueprintReferences } from "./blueprint-provider.js";
+import type { SourceContext } from "./source-provider.js";
 
 export type ContextBundle = {
   task: string;
@@ -31,6 +33,7 @@ export type ContextBundle = {
   requirement: { acceptance: string[]; docs: string[] };
   memory: { kind: string; title: string; path: string }[];
   context: AssembledContext; // ranked, token-budgeted selection over all files
+  blueprint?: SourceContext;
 };
 
 const exists = (p: string) => existsSync(resolveProjectPath(p));
@@ -97,6 +100,8 @@ export function buildBundle(task: Task, statePath: string, budget?: number): Con
     .slice(0, 10)
     .map(({ kind, title, path }) => ({ kind, title, path }));
 
+  const blueprint = resolveBlueprintReferences(task.references ?? []);
+
   // Ranked, budgeted selection over every real file the bundle gathered.
   const route = routeTask(task, statePath);
   const context = assembleContext(
@@ -104,5 +109,5 @@ export function buildBundle(task: Task, statePath: string, budget?: number): Con
     budget,
   );
 
-  return { task: task.id, workspace: workspaceSources, git, architecture, requirement, memory, context };
+  return { task: task.id, workspace: workspaceSources, git, architecture, requirement, memory, context, blueprint };
 }

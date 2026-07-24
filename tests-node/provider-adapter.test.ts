@@ -90,6 +90,17 @@ test("adapter sends large prompts through stdin when the plugin requests it", as
   assert.equal(r.outcome, "ok");
 });
 
+test("adapter refuses an oversized argv prompt before spawning the provider", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pa-argv-large-"));
+  const r = await invokeProvider(plugin(fakeProvider(dir)), {
+    ...opts(dir),
+    prompt: "x".repeat(100_000),
+  });
+  assert.equal(r.outcome, "argv-too-large");
+  assert.equal(r.attempts, 0);
+  assert.match(r.error!, /prompt_transport=stdin/);
+});
+
 test("adapter reports nonzero-exit and does not retry by default", async () => {
   const dir = mkdtempSync(join(tmpdir(), "pa-fail-"));
   const r = await invokeProvider(plugin(fakeProvider(dir)), {

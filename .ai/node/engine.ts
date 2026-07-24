@@ -113,6 +113,7 @@ export interface Task {
   acceptance: string[];
   files: string[];
   tags: string[];
+  references?: string[];
   attempts: number;
   evidence: string[];
   blocked_reason: string | null;
@@ -478,7 +479,7 @@ export function syncWorkflowDocs(state: State, path: string) {
   const tasks = state.tasks
     .map(
       (task) =>
-        `- [${task.status === "done" ? "x" : task.status === "retired" ? "~" : " "}] ${task.id} ${markdownText(task.title)} | owner: ${task.owner} | phase: ${task.phase} | status: ${task.status} | needs: ${task.needs.join(", ") || "-"} | files: ${task.files.join(", ") || "-"}\n` +
+        `- [${task.status === "done" ? "x" : task.status === "retired" ? "~" : " "}] ${task.id} ${markdownText(task.title)} | owner: ${task.owner} | phase: ${task.phase} | status: ${task.status} | needs: ${task.needs.join(", ") || "-"} | files: ${task.files.join(", ") || "-"} | references: ${(task.references ?? []).join(", ") || "-"}\n` +
         task.acceptance.map((criterion) => `  - Accept: ${markdownText(criterion)}`).join("\n"),
     )
     .join("\n");
@@ -532,6 +533,11 @@ export function validate(state: State) {
     if (!task.phase?.trim() || !task.acceptance?.length)
       throw new EngineError(`task ${task.id} needs phase and acceptance criteria`);
     if (!Array.isArray(task.needs)) throw new EngineError(`task ${task.id} needs must be an array`);
+    if (
+      task.references !== undefined &&
+      (!Array.isArray(task.references) || task.references.some((item) => typeof item !== "string" || !item.trim()))
+    )
+      throw new EngineError(`task ${task.id} references must be an array of non-empty strings`);
     const dependencies = new Set<string>();
     for (const dependency of task.needs)
       if (dependencies.has(dependency))
@@ -644,6 +650,7 @@ function taskFromInput(input: any): Task {
     acceptance: input.acceptance,
     files: input.files ?? [],
     tags: input.tags ?? [],
+    references: input.references ?? [],
     attempts: 0,
     evidence: [],
     blocked_reason: null,
@@ -742,9 +749,8 @@ export function transition(
   if (action === "start") {
     task.attempts++;
     task.claim = claim ?? null;
-    if (task.worktree_baseline === undefined && task.claim?.worktree_before) {
-      task.worktree_baseline = task.attempts === 1 ? task.claim.worktree_before : {};
-    }
+    if (task.worktree_baseline === undefined && task.claim?.worktree_before)
+      task.worktree_baseline = task.claim.worktree_before;
   }
   if (["complete", "block", "retire"].includes(action)) {
     if (task.claim) {

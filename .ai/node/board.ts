@@ -18,6 +18,7 @@ import {
 import { createWorktree, branch, mergeWorktree } from "./worktree.js";
 import { listCapabilities } from "./capabilities.js";
 import { buildBundle } from "./context-builder.js";
+import { assertBlueprintContext } from "./blueprint-provider.js";
 
 const pathFor = (workflowId?: string, state?: string) =>
   state ?? (workflowId ? engine.workflowStatePath(workflowId) : engine.STATE);
@@ -48,12 +49,22 @@ function configuredLeaseSeconds() {
 
 type WorktreeSnapshot = { available: boolean; files: Record<string, string> };
 
-function worktreeSnapshot(): WorktreeSnapshot {
+function worktreeSnapshot(declaredPaths: string[] = []): WorktreeSnapshot {
   const result = spawnSync("git", ["status", "--short", "--untracked-files=all"], {
     cwd: engine.PROJECT_ROOT,
     encoding: "utf8",
   });
-  if (result.status !== 0) return { available: false, files: {} };
+  if (result.status !== 0) {
+    // Projects without Git still need retry/no-op protection. Snapshot the
+    // declared task files directly so the control plane can compare hashes.
+    const files: Record<string, string> = {};
+    for (const rawPath of declaredPaths) {
+      const path = rawPath.replaceAll("\\\\", "/").replace(/^\.\//, "");
+      const hash = hashSource(join(engine.PROJECT_ROOT, path));
+      files[path] = `??:${hash ?? "missing"}`;
+    }
+    return { available: true, files };
+  }
   const files: Record<string, string> = {};
   for (const line of result.stdout.split(/\r?\n/).filter(Boolean)) {
     const status = line.slice(0, 2);
@@ -79,7 +90,7 @@ function normalizePath(path: string) {
 }
 
 function changedSinceBaseline(task: engine.Task) {
-  const current = worktreeSnapshot();
+  const current = worktreeSnapshot(task.files);
   const baseline = task.worktree_baseline ?? task.claim?.worktree_before ?? {};
   const changed = Object.entries(current.files)
     .filter(([path, signature]) => baseline[path] !== signature)
@@ -151,6 +162,7 @@ function manifest(task: engine.Task, attemptId: string, workflowId?: string, sta
     architecture,
     requirement,
     memory,
+    blueprint,
   } = buildBundle(task, pathFor(workflowId, state));
   const payload = {
     version: 1,
@@ -160,6 +172,7 @@ function manifest(task: engine.Task, attemptId: string, workflowId?: string, sta
     sources,
     context,
     bundle: { workspace, git: bundleGit, architecture, requirement, memory },
+    blueprint,
     completion: COMPLETION_REMINDER,
     git_status: git.status === 0 ? git.stdout.split(/\r?\n/).filter(Boolean) : [],
     generated_at: engine.now(),
@@ -285,28 +298,69 @@ export function claimNext(
     const value = engine.load<engine.State>(path);
     const task = engine.runnableTasks(value).find((item) => !owner || item.owner === owner);
     if (!task) return { claimed: null, reason: "no runnable task" };
-    const claim = engine.makeClaim(clientId, task, leaseSeconds);
-    claim.worktree_before = worktreeSnapshot().files;
     try {
-      engine.transition(path, task.id, "start", clientId, "", [], value.revision, claim, PRESERVE_CURRENT);
-      const context_manifest = manifest(task, claim.attempt_id, workflowId);
-      return {
-        claimed: task.id,
-        title: task.title,
-        owner: task.owner,
-        phase: task.phase,
-        acceptance: task.acceptance,
-        files: task.files,
-        route: route(workflowId, task.id),
-        claim,
-        context_manifest,
-        client_id: clientId,
-      };
+      return claimTaskFromValue(path, workflowId, clientId, task, value.revision, leaseSeconds);
     } catch (error) {
       if (!(error as Error).message.includes("concurrently")) throw error;
     }
   }
   return { claimed: null, reason: "contention" };
+}
+
+function claimTaskFromValue(
+  path: string,
+  workflowId: string,
+  clientId: string,
+  task: engine.Task,
+  revision: number,
+  leaseSeconds: number,
+) {
+  const claim = engine.makeClaim(clientId, task, leaseSeconds);
+  claim.worktree_before = worktreeSnapshot(task.files).files;
+  engine.transition(path, task.id, "start", clientId, "", [], revision, claim, PRESERVE_CURRENT);
+  const context_manifest = manifest(task, claim.attempt_id, workflowId);
+  return {
+    claimed: task.id,
+    title: task.title,
+    owner: task.owner,
+    phase: task.phase,
+    acceptance: task.acceptance,
+    files: task.files,
+    route: route(workflowId, task.id),
+    claim,
+    context_manifest,
+    client_id: clientId,
+  };
+}
+
+export function claimTask(
+  clientId: string,
+  workflowId: string,
+  taskId: string,
+  leaseSeconds = configuredLeaseSeconds(),
+) {
+  const path = pathFor(workflowId);
+  recover(path);
+  for (let retry = 0; retry < 6; retry++) {
+    const value = engine.load<engine.State>(path);
+    const task = engine.taskMap(value).get(taskId);
+    if (!task) throw new engine.EngineError(`unknown task: ${taskId}`);
+    if (!engine.runnable(task, engine.taskMap(value)))
+      throw new engine.EngineError(`task ${taskId} is not runnable (status: ${task.status})`);
+    try {
+      return claimTaskFromValue(path, workflowId, clientId, task, value.revision, leaseSeconds);
+    } catch (error) {
+      if (!(error as Error).message.includes("concurrently")) throw error;
+    }
+  }
+  return { claimed: null, reason: "contention", task: taskId };
+}
+
+export function recordGateError(workflowId: string, taskId: string, actor: string, phase: string, detail: string) {
+  const { path, value, task } = taskAt(taskId, workflowId);
+  engine.event(value, path, "gate-error", task, actor, task.status, task.status, `${phase}: ${detail}`);
+  engine.save(value, path, value.revision, PRESERVE_CURRENT);
+  return { task: taskId, status: task.status, phase, detail };
 }
 export function activeClaims(workflowId: string, clientId: string) {
   const path = pathFor(workflowId);
@@ -325,7 +379,13 @@ export function getContext(workflowId: string, taskId: string, clientId: string,
   const path = join(rootFor(workflowId), "context", `${taskId}-${attemptId}.json`);
   if (!existsSync(path)) throw new engine.EngineError(`context manifest not found for ${taskId}`);
   const value = JSON.parse(readFileSync(path, "utf8"));
-  return parseContextManifest({ ...value, completion: value.completion ?? COMPLETION_REMINDER });
+  const manifest = parseContextManifest({ ...value, completion: value.completion ?? COMPLETION_REMINDER });
+  try {
+    assertBlueprintContext(manifest.blueprint);
+  } catch (error) {
+    throw new engine.EngineError((error as Error).message);
+  }
+  return manifest;
 }
 export function heartbeat(
   workflowId: string,
@@ -390,6 +450,15 @@ export function submitResultArtifact(
     result.actor !== clientId
   )
     throw new engine.EngineError("result artifact does not match the active attempt");
+  const contextPath = join(rootFor(workflowId), "context", `${taskId}-${attemptId}.json`);
+  if (existsSync(contextPath)) {
+    try {
+      const contextManifest = parseContextManifest(JSON.parse(readFileSync(contextPath, "utf8")));
+      assertBlueprintContext(contextManifest.blueprint);
+    } catch (error) {
+      throw new engine.EngineError(`Blueprint context validation failed: ${(error as Error).message}`);
+    }
+  }
   const evidence = displayArtifactPath(output);
   if (result.status !== "pass") {
     engine.transition(
@@ -461,6 +530,7 @@ export function submitQa(
   status: "pass" | "fail",
   summary: string,
   commands: string[] = [],
+  metadata: { failure_code?: string; checks?: unknown[] } = {},
 ) {
   const output = artifactPath(workflowId, "qa", `${taskId}-${actor}`);
   writeArtifact(output, "qa", {
@@ -472,6 +542,7 @@ export function submitQa(
     status,
     summary,
     commands,
+    ...metadata,
   });
   return submitQaArtifact(workflowId, taskId, actor, output);
 }

@@ -45,6 +45,23 @@ local QA enabled. Select providers once during setup:
 ai-kit setup --planner claude --executor codex --qa local --reviewer codex
 ```
 
+Project knowledge providers are also opt-in. AI-Kit does not create or require
+a `Blueprint/` directory. For a project whose canonical documents are already
+there, configure the provider explicitly:
+
+```bash
+ai-kit setup --knowledge-provider blueprint \
+  --blueprint-manifest Blueprint/blueprint.json
+ai-kit blueprint scan
+ai-kit blueprint status
+ai-kit blueprint validate
+ai-kit blueprint resolve --id BP-001
+```
+
+Tasks may reference document IDs with `--reference BP-001`; context manifests
+record the resolved path and SHA256. Execution and result submission fail
+closed when a referenced document is missing or has changed.
+
 The equivalent project configuration is:
 
 ```yaml
@@ -111,6 +128,8 @@ Editor agents can act as AI-Kit clients without enabling a provider CLI:
 
 ```bash
 ai-kit agent claim --workflow-id default --client-id codex-extension
+# Or claim one explicitly assigned runnable task:
+ai-kit agent claim --workflow-id default --task-id T1 --client-id codex-extension
 ai-kit agent context --workflow-id default --task-id T1 --client-id codex-extension --attempt-id ATTEMPT
 ai-kit agent result --workflow-id default --task-id T1 --client-id codex-extension --attempt-id ATTEMPT --status pass --summary "implemented"
 ```

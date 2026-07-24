@@ -28,6 +28,7 @@ export type Plugin = {
   // Provider-adapter tuning (optional, backward compatible).
   timeout_ms?: number;
   retries?: number;
+  max_prompt_bytes?: number;
 };
 
 const validId = (value: string) => /^[a-z0-9][a-z0-9-]{0,62}$/.test(value);
@@ -72,7 +73,8 @@ export function loadPlugin(role: Role, id: string): Plugin {
     !validCommand(plugin.validate) ||
     !validCapabilities(plugin.capabilities) ||
     !validCount(plugin.timeout_ms, 1000, 3_600_000) ||
-    !validCount(plugin.retries, 0, 5)
+    !validCount(plugin.retries, 0, 5) ||
+    !validCount(plugin.max_prompt_bytes, 1024, 128_000)
   )
     throw new PluginError(`invalid plugin manifest: ${path}`);
   assertCommandAllowed(plugin.command);

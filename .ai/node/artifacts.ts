@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
 import { displayPath, WORK } from "./engine.js";
+import { SourceContext } from "./source-provider.js";
 
 export class ArtifactError extends Error {}
 export const PluginRole = z.enum(["planner", "executor", "qa", "reviewer"]);
@@ -26,6 +27,8 @@ export const QaArtifact = base.extend({
   status: z.enum(["pass", "fail"]),
   summary: z.string().min(1),
   commands: z.array(z.string()).default([]),
+  failure_code: z.string().min(1).optional(),
+  checks: z.array(z.record(z.string(), z.unknown())).default([]),
 });
 export const ReviewArtifact = base.extend({
   kind: z.literal("review"),
@@ -46,6 +49,7 @@ export const PlanArtifact = base.extend({
       acceptance: z.array(z.string().min(1)).min(1),
       files: z.array(z.string()).default([]),
       tags: z.array(z.string()).default([]),
+      references: z.array(z.string()).default([]),
     }),
   ),
 });
@@ -85,6 +89,7 @@ export const ContextManifest = z.object({
     requirement: z.object({ acceptance: z.array(z.string()), docs: z.array(z.string()) }),
     memory: z.array(z.object({ kind: z.string(), title: z.string(), path: z.string() })),
   }),
+  blueprint: SourceContext.optional(),
   completion: z.object({
     required_action: z.literal("ai-kit agent result"),
     reminder: z.string().min(1),

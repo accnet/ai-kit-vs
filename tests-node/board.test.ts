@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import * as board from "../.ai/node/board.js";
@@ -227,6 +229,47 @@ test("retry result rejects completion when no declared file changed", () => {
     /no declared file changed/,
   );
   assert.equal(load<any>(path).tasks[0].status, "in-progress");
+});
+
+test("retry result accepts a declared file change in a project without Git", () => {
+  const project = mkdtempSync(join(tmpdir(), "aikit-no-git-retry-"));
+  const probe = join(project, "probe.ts");
+  const source = `
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import * as board from ${JSON.stringify(join(process.cwd(), ".ai/node/board.ts"))};
+import { load, save, workflowStatePath } from ${JSON.stringify(join(process.cwd(), ".ai/node/engine.ts"))};
+
+const workflowId = "no-git-retry";
+board.createWorkflow("No Git retry", "feature", workflowId, "planner");
+board.addTask({ workflow_id: workflowId, id: "T1", title: "change file", owner: "backend", phase: "build", files: ["declared.txt"], acceptance: ["changed"] });
+board.claimNext("retry-executor", workflowId);
+const path = workflowStatePath(workflowId);
+const state = load<any>(path);
+state.tasks[0].claim.lease_expires_at = "2000-01-01T00:00:00Z";
+save(state, path, state.revision);
+const retry = board.claimNext("retry-executor", workflowId) as any;
+writeFileSync(join(${JSON.stringify(project)}, "declared.txt"), "changed");
+board.submitResult(workflowId, "T1", "retry-executor", retry.claim.attempt_id, "changed");
+console.log(load<any>(path).tasks[0].status);
+`;
+  try {
+    writeFileSync(probe, source);
+    const result = spawnSync(process.execPath, [join(process.cwd(), ".ai/node/node_modules/tsx/dist/cli.mjs"), probe], {
+      cwd: project,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        AIKIT_ROOT: process.cwd(),
+        AIKIT_PROJECT_ROOT: project,
+        AIKIT_WORK: join(project, ".ai-work"),
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), "implementation-complete");
+  } finally {
+    rmSync(project, { recursive: true, force: true });
+  }
 });
 
 test("status recovers an expired claim to todo", () => {

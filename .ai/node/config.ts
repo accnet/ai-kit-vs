@@ -65,7 +65,7 @@ export type MicroTaskPolicy = Readonly<{
   requireReview: boolean;
 }>;
 
-function nestedScalar(path: string[], source: string): string | undefined {
+export function nestedScalar(path: string[], source: string): string | undefined {
   const lines = source.split(/\r?\n/);
   let start = 0;
   let parentIndent = -1;
@@ -92,8 +92,27 @@ function nestedScalar(path: string[], source: string): string | undefined {
 }
 
 const VERIFICATION_KEYS = ["test_command", "typecheck_command", "build_command", "lint_command"] as const;
-export type VerificationKey = (typeof VERIFICATION_KEYS)[number];
+export type VerificationKey = (typeof VERIFICATION_KEYS)[number] | string;
 export type VerificationCheck = { name: VerificationKey; command: string };
+
+function namedVerificationCommands(source: string): VerificationCheck[] {
+  const lines = source.split(/\r?\n/);
+  const checksLine = lines.find((line) => /^\s*checks:\s*$/.test(line));
+  if (!checksLine) return [];
+  const checksIndent = checksLine.match(/^(\s*)/)?.[1].length ?? 0;
+  const start = lines.indexOf(checksLine) + 1;
+  const result: VerificationCheck[] = [];
+  for (let index = start; index < lines.length; index++) {
+    const line = lines[index];
+    if (!line.trim()) continue;
+    const indent = line.match(/^(\s*)/)?.[1].length ?? 0;
+    if (indent <= checksIndent) break;
+    const match = /^\s*([A-Za-z][A-Za-z0-9_-]*):\s*(.*?)\s*(?:#.*)?$/.exec(line);
+    if (!match || !match[2]) continue;
+    result.push({ name: match[1], command: match[2].replace(/^['"]|['"]$/g, "") });
+  }
+  return result;
+}
 
 export function projectConfigPath() {
   return [
@@ -124,7 +143,8 @@ export function verificationCommands(source?: string): VerificationCheck[] {
       } catch {}
     }
   }
-  return checks;
+  const named = configuredSource ? namedVerificationCommands(configuredSource) : [];
+  return [...checks, ...named.filter((item) => !checks.some((existing) => existing.name === item.name))];
 }
 
 export function verificationCwd(source?: string) {

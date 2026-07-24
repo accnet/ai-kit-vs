@@ -5,7 +5,13 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import * as board from "./board.js";
 import * as engine from "./engine.js";
-import { closeAfterQaPolicy, microTaskPolicy, verificationCommands, verificationCwd } from "./config.js";
+import {
+  closeAfterQaPolicy,
+  microTaskPolicy,
+  verificationCommands,
+  verificationCwd,
+  type VerificationCheck,
+} from "./config.js";
 import { configuredProviderId } from "./models.js";
 import { assertCommandAllowed, parseCommand } from "./security.js";
 
@@ -20,7 +26,22 @@ export type VerificationResult = {
   passed: boolean;
   commands: string[];
   summary: string;
+  failure_code?: "needs-migration" | "environment-unavailable" | "verification-failed" | "command-rejected";
+  checks: {
+    name: string;
+    command: string;
+    passed: boolean;
+    failure_code?: string;
+    exit_code: number | null;
+  }[];
 };
+
+function failureCode(check: VerificationCheck, rejected = false) {
+  if (rejected) return "command-rejected" as const;
+  if (/(migration|schema|database)/i.test(check.name)) return "needs-migration" as const;
+  if (/(live|smoke|health|preflight|environment)/i.test(check.name)) return "environment-unavailable" as const;
+  return "verification-failed" as const;
+}
 
 export function verifyTask(
   task: Pick<engine.Task, "phase">,
@@ -28,7 +49,7 @@ export function verifyTask(
   cwd = verificationCwd(),
 ): VerificationResult {
   if (!checks.length && task.phase === "plan")
-    return { passed: true, commands: [], summary: "planning task: project verification not required" };
+    return { passed: true, commands: [], checks: [], summary: "planning task: project verification not required" };
   return verify(checks, cwd);
 }
 
@@ -36,15 +57,28 @@ export function verifyTask(
 // check instead of trusting the executor's self-reported evidence.
 export function verify(checks = verificationCommands(), cwd = verificationCwd()): VerificationResult {
   if (process.env.AIKIT_SKIP_VERIFY)
-    return { passed: true, commands: [], summary: "verification skipped by AIKIT_SKIP_VERIFY" };
+    return { passed: true, commands: [], checks: [], summary: "verification skipped by AIKIT_SKIP_VERIFY" };
 
   if (!checks.length)
-    return { passed: false, commands: [], summary: "verification failed: no verification commands are configured" };
+    return {
+      passed: false,
+      commands: [],
+      checks: [],
+      failure_code: "verification-failed",
+      summary: "verification failed: no verification commands are configured",
+    };
 
   if (!existsSync(cwd))
-    return { passed: false, commands: [], summary: `verification failed: configured cwd does not exist: ${cwd}` };
+    return {
+      passed: false,
+      commands: [],
+      checks: [],
+      failure_code: "environment-unavailable",
+      summary: `verification failed: configured cwd does not exist: ${cwd}`,
+    };
 
   const commands: string[] = [];
+  const results: VerificationResult["checks"] = [];
   for (const check of checks) {
     commands.push(check.command);
     let command: string[];
@@ -55,6 +89,17 @@ export function verify(checks = verificationCommands(), cwd = verificationCwd())
       return {
         passed: false,
         commands,
+        checks: [
+          ...results,
+          {
+            name: check.name,
+            command: check.command,
+            passed: false,
+            failure_code: failureCode(check, true),
+            exit_code: null,
+          },
+        ],
+        failure_code: failureCode(check, true),
         summary: `verification rejected: ${check.name}: ${(error as Error).message}`,
       };
     }
@@ -63,12 +108,25 @@ export function verify(checks = verificationCommands(), cwd = verificationCwd())
       return {
         passed: false,
         commands,
+        checks: [
+          ...results,
+          {
+            name: check.name,
+            command: check.command,
+            passed: false,
+            failure_code: failureCode(check),
+            exit_code: result.status,
+          },
+        ],
+        failure_code: failureCode(check),
         summary: `verification failed: ${check.name} (${check.command}) in ${engine.displayPath(cwd)}`,
       };
+    results.push({ name: check.name, command: check.command, passed: true, exit_code: result.status });
   }
   return {
     passed: true,
     commands,
+    checks: results,
     summary: `verified by gate-runner: ${commands.join("; ")} in ${engine.displayPath(cwd)}`,
   };
 }
@@ -101,7 +159,12 @@ export function runGateCycle(
         try {
           const verification = reverify
             ? verifyTask(item)
-            : ({ passed: true, commands: [], summary: "verification bypassed by caller" } satisfies VerificationResult);
+            : ({
+                passed: true,
+                commands: [],
+                checks: [],
+                summary: "verification bypassed by caller",
+              } satisfies VerificationResult);
           board.submitQa(
             workflowId,
             item.id,
@@ -109,9 +172,15 @@ export function runGateCycle(
             verification.passed ? "pass" : "fail",
             verification.summary,
             verification.commands,
+            { failure_code: verification.failure_code, checks: verification.checks },
           );
           acted.push({ task: item.id, action: verification.passed ? "qa-pass" : "qa-fail" });
-        } catch {}
+        } catch (error) {
+          try {
+            board.recordGateError(workflowId, item.id, client, "qa", (error as Error).message);
+          } catch {}
+          acted.push({ task: item.id, action: "qa-error" });
+        }
 
   // Review must come from the configured reviewer plugin. The gate runner may
   // close an already approved task, but it must never manufacture approval.
@@ -147,7 +216,12 @@ export function runGateCycle(
             task: task.id,
             action: closeAfterQa && task.status === "qa-passed" ? "close-after-qa" : "close",
           });
-        } catch {}
+        } catch (error) {
+          try {
+            board.recordGateError(workflowId, task.id, client, "release", (error as Error).message);
+          } catch {}
+          acted.push({ task: task.id, action: "release-error" });
+        }
 
   return acted;
 }

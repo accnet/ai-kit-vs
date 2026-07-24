@@ -45,7 +45,8 @@ Run from the project root; state stays in `.ai-work/`:
 - `ai-kit ready` — tasks ready to work on.
 - `ai-kit show` — full state.
 - `ai-kit route <task-id>` — role contract, skills, and context for a task.
-- `ai-kit agent claim --workflow-id <id> --client-id <extension-id>` — claim the next task through the State Manager.
+- `ai-kit agent claim --workflow-id <id> --client-id <extension-id>` — claim the next runnable task through the State Manager.
+- `ai-kit agent claim --workflow-id <id> --task-id <task> --client-id <extension-id>` — claim one explicitly assigned runnable task.
 - `ai-kit agent context --workflow-id <id> --task-id <task> --client-id <client> --attempt-id <attempt>` — load the claimed context.
 - `ai-kit agent result --workflow-id <id> --task-id <task> --client-id <client> --attempt-id <attempt> --status pass --summary "..."` — submit implementation evidence.
 - `ai-kit copilot finish --summary "..."` — let Copilot discover its active claim and submit implementation evidence.
@@ -102,7 +103,8 @@ use `ai-kit agent claim` before editing, read the returned context manifest,
 send periodic heartbeats for long work, and submit exactly one result through
 `ai-kit agent result`. Editor claims last 900 seconds by default; use
 `--lease-seconds <n>` or `AIKIT_LEASE_SECONDS` when a task needs a different
-duration. They may edit project files, but must never edit
+duration. Use `--task-id` when a dispatcher assigns a specific task; omit it
+when the client should claim the next runnable task. They may edit project files, but must never edit
 `.ai-work/workflows/` directly. QA, review, and release gates remain owned by
 independent AI-Kit clients.
 

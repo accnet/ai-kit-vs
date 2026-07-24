@@ -104,3 +104,18 @@ test("verificationCommands reads every declared verification check", () => {
     { name: "lint_command", command: "npm run lint" },
   ]);
 });
+
+test("verificationCommands reads named checks without removing legacy checks", () => {
+  const source = [
+    "verification:",
+    "  test_command: npm test",
+    "  checks:",
+    "    migration: npm run db:check",
+    "    live-smoke: ./scripts/smoke.sh",
+  ].join("\n");
+  assert.deepEqual(verificationCommands(source), [
+    { name: "test_command", command: "npm test" },
+    { name: "migration", command: "npm run db:check" },
+    { name: "live-smoke", command: "./scripts/smoke.sh" },
+  ]);
+});

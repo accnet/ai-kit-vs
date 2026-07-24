@@ -65,6 +65,27 @@ test("agent claims accept an explicit longer lease for editor clients", () => {
   assert.ok(expires - before <= 1201000);
 });
 
+test("agent targeted claim selects the requested runnable task and preserves next-task claiming", () => {
+  const workflowId = `agent-targeted-${Date.now().toString(36)}`;
+  board.createWorkflow("Agent targeted claim", "feature", workflowId, "planner");
+  for (const id of ["T1", "T2"])
+    board.addTask({
+      workflow_id: workflowId,
+      id,
+      title: id,
+      owner: "backend",
+      phase: "build",
+      acceptance: ["claimable"],
+    });
+
+  const targeted: any = agent.claimTask(workflowId, "targeted-client", "T2");
+  assert.equal(targeted.claimed, "T2");
+  assert.equal(targeted.claim.attempt_id.startsWith("T2-1-"), true);
+  const next: any = board.claimNext("queue-client", workflowId);
+  assert.equal(next.claimed, "T1");
+  assert.throws(() => agent.claimTask(workflowId, "targeted-client", "missing"), /unknown task: missing/);
+});
+
 test("Copilot finish discovers its active claim and submits implementation evidence", () => {
   const workflowId = `copilot-finish-${Date.now().toString(36)}`;
   board.createWorkflow("Copilot finish", "feature", workflowId, "planner");

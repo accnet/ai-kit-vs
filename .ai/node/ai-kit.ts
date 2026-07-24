@@ -45,6 +45,7 @@ import { type MemoryKind } from "./memory.js";
 import { runtime } from "./runtime.js";
 import { status as boardStatus } from "./board.js";
 import { events as workflowEvents, waitForEvents } from "./board.js";
+import { runBlueprintCommand, type BlueprintCommand } from "./blueprint-cli.js";
 
 const argv = process.argv.slice(2);
 let statePath = STATE;
@@ -80,6 +81,8 @@ Options:
   --executor <plugin>  Executor provider, or off
   --qa <plugin>        QA provider, or local/off
   --reviewer <plugin>  Reviewer provider, or off
+  --knowledge-provider <id>  Opt-in project knowledge provider, or off
+  --blueprint-manifest <path> Blueprint manifest path (default: Blueprint/blueprint.json)
   --force              Refresh managed bridge files
   -h, --help           Show this help`,
   plan: `Usage: ai-kit plan --idea <text> --owner <role> --acceptance <text> [options]
@@ -129,6 +132,7 @@ Options:
   --acceptance <text> Acceptance criterion (repeatable)
   --needs <task-id>    Dependency (repeatable)
   --files <path>       Declared file path (repeatable)
+  --reference <id>     Canonical source reference (repeatable)
   --tags <tag>         Task tag (repeatable)
   --actor <id>         Event actor
   --workflow-id <id>   Target workflow
@@ -257,7 +261,7 @@ Common options:
   --workflow-id <id>   Target workflow (required)
   --client-id <id>     Calling extension or worker (required)
   --lease-seconds <n>  Claim lease duration for agent claim (15..3600)
-  --task-id <id>       Task for context, heartbeat, result, QA, or review
+  --task-id <id>       Task for context, heartbeat, result, QA, review, or targeted claim
   --attempt-id <id>    Active claim attempt for context, heartbeat, or result
   --status <status>    pass or fail for result or QA
   --summary <text>     Evidence summary for result or QA
@@ -282,6 +286,12 @@ Lists valid task owner roles and provider roles.
 
 Options:
   -h, --help           Show this help`,
+  blueprint: `Usage: ai-kit blueprint <discover|scan|status|validate|resolve> [options]
+
+Options:
+  --manifest <path>    Explicit Blueprint manifest path
+  --id <document-id>   Document id for resolve
+  -h, --help           Show this help`,
 };
 
 function topHelp(): string {
@@ -303,6 +313,7 @@ function topHelp(): string {
     "context",
     "agent",
     "copilot",
+    "blueprint",
     "memory",
     "lock",
     "verify-lock",
@@ -430,6 +441,22 @@ const handlers: Record<string, () => unknown> = {
       writeFileSync(destination, readFileSync(join(ROOT, ".ai", "templates", name)));
       initializedProjectConfigs.push(displayPath(destination));
     }
+    const knowledgeProvider = one("knowledge-provider");
+    const blueprintManifest = one("blueprint-manifest");
+    if (knowledgeProvider !== undefined || blueprintManifest !== undefined) {
+      const projectConfig = join(WORK, "project.yaml");
+      if (!existsSync(projectConfig)) throw new EngineError(`project config missing: ${displayPath(projectConfig)}`);
+      if (knowledgeProvider !== undefined && !/^(off|[a-z0-9][a-z0-9-]{0,62})$/.test(knowledgeProvider))
+        throw new EngineError("--knowledge-provider must be off or a lowercase provider id");
+      const current = readFileSync(projectConfig, "utf8");
+      const provider = knowledgeProvider ?? "blueprint";
+      const manifest = blueprintManifest ?? "Blueprint/blueprint.json";
+      const knowledgeBlock = `knowledge:\n  provider: ${provider}\n  manifest: ${manifest}\n`;
+      const updated = /^knowledge:\n(?:  .*\n)*/m.test(current)
+        ? current.replace(/^knowledge:\n(?:  .*\n)*/m, knowledgeBlock)
+        : `${current.trimEnd()}\n\n${knowledgeBlock}`;
+      writeFileSync(projectConfig, updated);
+    }
     const memoryReadme = join(PROJECT_ROOT, ".ai-memory", "README.md");
     if (!existsSync(memoryReadme)) {
       mkdirSync(join(PROJECT_ROOT, ".ai-memory"), { recursive: true });
@@ -515,6 +542,7 @@ const handlers: Record<string, () => unknown> = {
         acceptance,
         files: many("files"),
         tags: many("tags"),
+        references: many("reference"),
         attempts: 0,
         evidence: [],
         blocked_reason: null,
@@ -575,11 +603,18 @@ const handlers: Record<string, () => unknown> = {
         acceptance: many("acceptance"),
         needs: many("needs"),
         files: many("files"),
+        references: many("reference"),
         tags: many("tags"),
         actor: one("actor") ?? "planner",
       },
       { preserveCurrent: explicitState || !!targetWorkflowId },
     );
+  },
+  blueprint: () => {
+    const subcommand = argv.shift() as BlueprintCommand | undefined;
+    if (!subcommand || !["discover", "scan", "status", "validate", "resolve"].includes(subcommand))
+      throw new EngineError("usage: ai-kit blueprint <discover|scan|status|validate|resolve> [options]");
+    return runBlueprintCommand(subcommand, argv);
   },
   "micro-task": () => {
     const policy = microTaskPolicy();
@@ -599,6 +634,7 @@ const handlers: Record<string, () => unknown> = {
         acceptance: many("acceptance"),
         needs: many("needs"),
         files,
+        references: many("reference"),
         tags: [...new Set([...many("tags"), "micro"])],
         actor: one("actor") ?? "micro-task",
       },
@@ -702,7 +738,10 @@ const handlers: Record<string, () => unknown> = {
           throw new EngineError("--lease-seconds must be an integer between 15 and 3600");
         leaseSeconds = parsed;
       }
-      return runtime.agent.claim(workflowId, clientId, one("owner"), leaseSeconds);
+      const taskId = one("task-id");
+      return taskId
+        ? runtime.agent.claimTask(workflowId, clientId, taskId, leaseSeconds)
+        : runtime.agent.claim(workflowId, clientId, one("owner"), leaseSeconds);
     }
     if (sub === "context")
       return runtime.agent.context(workflowId, one("task-id", true)!, clientId, one("attempt-id", true)!);
